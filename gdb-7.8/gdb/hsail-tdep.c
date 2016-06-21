@@ -106,6 +106,8 @@ void hsail_linux_initialize_stg2(void)
    * */
 
   struct ui_out* uiout = current_uiout;
+  char * hsaBreakpointLocation = " TriggerStop";
+
   int fd = 0;
 
   gdb_assert(NULL != uiout);
@@ -126,6 +128,10 @@ void hsail_linux_initialize_stg2(void)
         {
           g_hsail_fifo_descriptor = fd;
         }
+
+      create_hsa_gpu_breakpoint(hsaBreakpointLocation);
+
+      hsail_enqueue_enable_hsa_breakpoint();
 
       /*
        * The shared memory for the dbe binary is created in the agent
