@@ -136,6 +136,9 @@ static void hsail_validate_command_packet(const HsailCommandPacket packet)
           valid =1;
         }
       break;
+    case HSAIL_COMMAND_SET_HSABP:
+      valid = 1;
+      break;
     case HSAIL_COMMAND_UNKNOWN:
       valid = 0;
       break;
@@ -315,6 +318,22 @@ static void hsail_push_command(HsailCommandPacket packet)
 
   bytes_written = write(file_desc, &packet ,sizeof(HsailCommandPacket));
   gdb_assert(bytes_written == sizeof(HsailCommandPacket));
+}
+
+/* This function is called to tell the agent to use the internal
+ * breakpoint instead of SIGUSR2 to stop to notify GDB of a GPU
+ * kernel breakpoint.
+ */
+void
+hsail_enqueue_enable_hsa_breakpoint(void)
+{
+  HsailCommandPacket hsa_bp_packet;
+
+  memset(&hsa_bp_packet, 0, sizeof(hsa_bp_packet));
+
+  hsa_bp_packet.m_command = HSAIL_COMMAND_SET_HSABP;
+
+  hsail_push_command(hsa_bp_packet);
 }
 
 /*
