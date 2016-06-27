@@ -106,7 +106,7 @@ void hsail_linux_initialize_stg2(void)
    * */
 
   struct ui_out* uiout = current_uiout;
-  char * hsaBreakpointLocation = " TriggerStop";
+  char * hsaBreakpointLocation = "TriggerStop";
 
   int fd = 0;
 
@@ -129,9 +129,10 @@ void hsail_linux_initialize_stg2(void)
           g_hsail_fifo_descriptor = fd;
         }
 
+      /* Place the breakpoint in the GPUDebugSDK library
+       * that will be hit when a gpu breakpoint is hit.
+       */
       create_hsa_gpu_breakpoint(hsaBreakpointLocation);
-
-      hsail_enqueue_enable_hsa_breakpoint();
 
       /*
        * The shared memory for the dbe binary is created in the agent

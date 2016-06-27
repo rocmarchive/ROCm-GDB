@@ -36,8 +36,6 @@ void hsail_free_command_buffer(void);
 
 void hsail_flush_breakpoint_command_buffer(void);
 
-void hsail_enqueue_enable_hsa_breakpoint(void);
-
 void hsail_enqueue_continue_dispatch_packet(void);
 
 void hsail_enqueue_create_breakpoint_request_buffer(const HsailBreakpointRequest* request);

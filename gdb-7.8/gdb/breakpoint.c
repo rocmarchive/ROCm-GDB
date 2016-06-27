@@ -16806,8 +16806,15 @@ initialize_breakpoint_ops (void)
 void
 create_hsa_gpu_breakpoint(char *location)
 {
+  /* A copy to a local buffer is used, as
+   * location might be in a read-only memory
+   * and create_breakpoint takes a non constant
+   * char *.
+   */
+  char buffer[30];
+  strncpy(buffer, location,30);
   create_breakpoint(get_current_arch(),
-		    location,
+		    buffer,
 		    NULL, 0, NULL, 1,
 		    0, bp_breakpoint,
 		    0,
