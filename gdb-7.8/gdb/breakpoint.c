@@ -303,8 +303,8 @@ static struct breakpoint_ops longjmp_breakpoint_ops;
    breakpoints.  */
 struct breakpoint_ops bkpt_breakpoint_ops;
 
-/* The breapoint_ops structure to be used in HSA library breakpoint */
-struct breakpoint_ops hsa_breakpoint_ops;
+/* The breakpoint_ops structure to be used in HSA library breakpoint */
+struct breakpoint_ops gpu_breakpoint_trigger_ops;
 
 /* Breakpoints set on probes.  */
 static struct breakpoint_ops bkpt_probe_breakpoint_ops;
@@ -13617,7 +13617,7 @@ bkpt_resources_needed (const struct bp_location *bl)
 }
 
 static enum print_stop_action
-hsa_bkpt_print_it (bpstat bs)
+gpu_bkpt_trigger_print_it (bpstat bs)
 {
   struct breakpoint *b;
   const struct bp_location *bl;
@@ -16636,9 +16636,9 @@ initialize_breakpoint_ops (void)
   ops->print_recreate = bkpt_print_recreate;
 
   /* The HSA breakpoint structure that will be hit when the GPU hits a breakpoint. */
-  ops = &hsa_breakpoint_ops;
+  ops = &gpu_breakpoint_trigger_ops;
   *ops = bkpt_breakpoint_ops;
-  ops->print_it = hsa_bkpt_print_it;
+  ops->print_it = gpu_bkpt_trigger_print_it;
 
   /* Ranged breakpoints.  */
   ops = &ranged_breakpoint_ops;
@@ -16804,7 +16804,7 @@ initialize_breakpoint_ops (void)
 }
 
 void
-create_hsa_gpu_breakpoint(char *location)
+create_hsa_gpu_breakpoint_trigger(char *location)
 {
   /* A copy to a local buffer is used, as
    * location might be in a read-only memory
@@ -16819,7 +16819,7 @@ create_hsa_gpu_breakpoint(char *location)
 		    0, bp_breakpoint,
 		    0,
 		    pending_break_support,
-		    &hsa_breakpoint_ops,
+		    &gpu_breakpoint_trigger_ops,
 		    1,
 		    1,	/* Is enabled. */
 		    1,	/* Internal breakpoint. */

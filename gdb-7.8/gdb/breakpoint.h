@@ -1294,7 +1294,7 @@ extern int create_breakpoint (struct gdbarch *gdbarch, char *arg,
 			      int enabled,
 			      int internal, unsigned flags);
 
-extern void create_hsa_gpu_breakpoint (char *location);
+extern void create_hsa_gpu_breakpoint_trigger (char *location);
 
 extern void insert_breakpoints (void);
 
