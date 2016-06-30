@@ -13636,18 +13636,17 @@ gpu_bkpt_trigger_print_it (bpstat bs)
 				   b->number, 1);
   annotate_breakpoint (b->number);
   if (bp_temp)
-    ui_out_text (uiout, "\nTemporary breakpoint triggered by GPU Kernel Breakpoint");
+    ui_out_text (uiout, "\nTemporary breakpoint triggered by GPU Kernel Breakpoint\n");
   else
-    ui_out_text (uiout, "\nStopped on GPU Breakpoint");
+    ui_out_text (uiout, "\nStopped on GPU Breakpoint\n");
   if (ui_out_is_mi_like_p (uiout))
     {
       ui_out_field_string (uiout, "reason",
 			   async_reason_lookup (EXEC_ASYNC_BREAKPOINT_HIT));
       ui_out_field_string (uiout, "disp", bpdisp_text (b->disposition));
     }
-  ui_out_text (uiout, ", ");
 
-  return PRINT_SRC_AND_LOC;
+  return PRINT_NOTHING;
 }
 
 static enum print_stop_action
