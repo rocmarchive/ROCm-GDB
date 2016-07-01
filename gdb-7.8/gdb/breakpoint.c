@@ -303,6 +303,9 @@ static struct breakpoint_ops longjmp_breakpoint_ops;
    breakpoints.  */
 struct breakpoint_ops bkpt_breakpoint_ops;
 
+/* The breakpoint_ops structure to be used in HSA library breakpoint */
+struct breakpoint_ops gpu_breakpoint_trigger_ops;
+
 /* Breakpoints set on probes.  */
 static struct breakpoint_ops bkpt_probe_breakpoint_ops;
 
@@ -13614,6 +13617,39 @@ bkpt_resources_needed (const struct bp_location *bl)
 }
 
 static enum print_stop_action
+gpu_bkpt_trigger_print_it (bpstat bs)
+{
+  struct breakpoint *b;
+  const struct bp_location *bl;
+  int bp_temp;
+  struct ui_out *uiout = current_uiout;
+
+  gdb_assert (bs->bp_location_at != NULL);
+
+  bl = bs->bp_location_at;
+  b = bs->breakpoint_at;
+
+  bp_temp = b->disposition == disp_del;
+  if (bl->address != bl->requested_address)
+    breakpoint_adjustment_warning (bl->requested_address,
+				   bl->address,
+				   b->number, 1);
+  annotate_breakpoint (b->number);
+  if (bp_temp)
+    ui_out_text (uiout, "\nTemporary breakpoint triggered by GPU Kernel Breakpoint\n");
+  else
+    ui_out_text (uiout, "\nStopped on GPU Breakpoint\n");
+  if (ui_out_is_mi_like_p (uiout))
+    {
+      ui_out_field_string (uiout, "reason",
+			   async_reason_lookup (EXEC_ASYNC_BREAKPOINT_HIT));
+      ui_out_field_string (uiout, "disp", bpdisp_text (b->disposition));
+    }
+
+  return PRINT_NOTHING;
+}
+
+static enum print_stop_action
 bkpt_print_it (bpstat bs)
 {
   struct breakpoint *b;
@@ -16598,6 +16634,11 @@ initialize_breakpoint_ops (void)
   ops->print_mention = bkpt_print_mention;
   ops->print_recreate = bkpt_print_recreate;
 
+  /* The HSA breakpoint structure that will be hit when the GPU hits a breakpoint. */
+  ops = &gpu_breakpoint_trigger_ops;
+  *ops = bkpt_breakpoint_ops;
+  ops->print_it = gpu_bkpt_trigger_print_it;
+
   /* Ranged breakpoints.  */
   ops = &ranged_breakpoint_ops;
   *ops = bkpt_breakpoint_ops;
@@ -16759,6 +16800,30 @@ initialize_breakpoint_ops (void)
   ops->print_recreate = dprintf_print_recreate;
   ops->after_condition_true = dprintf_after_condition_true;
   ops->breakpoint_hit = dprintf_breakpoint_hit;
+}
+
+void
+create_hsa_gpu_breakpoint_trigger(char *location)
+{
+  /* A copy to a local buffer is used, as
+   * location might be in a read-only memory
+   * and create_breakpoint takes a non constant
+   * char *.
+   */
+  char buffer[30];
+  strncpy(buffer, location,30);
+  create_breakpoint(get_current_arch(),
+		    buffer,
+		    NULL, 0, NULL, 1,
+		    0, bp_breakpoint,
+		    0,
+		    pending_break_support,
+		    &gpu_breakpoint_trigger_ops,
+		    1,
+		    1,	/* Is enabled. */
+		    1,	/* Internal breakpoint. */
+		    0); /* No flags */
+
 }
 
 /* Chain containing all defined "enable breakpoint" subcommands.  */
