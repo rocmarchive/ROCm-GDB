@@ -1,9 +1,9 @@
 # ROCm-GDB
-The ROCm-GDB repository includes the source code for ROCm-GDB. ROCm-GDB is a modified version of GDB 7.8 that supports debugging GPU kernels on Radeon Open Compute platforms (ROCm).
+The ROCm-GDB repository includes the source code for ROCm-GDB. ROCm-GDB is a modified version of GDB 7.11 that supports debugging GPU kernels on Radeon Open Compute platforms (ROCm).
 
 # Package Contents
 The ROCm-GDB repository includes
-* A modified version of gdb-7.8 to support GPU debugging. Note the main ROCm specific files are located in *gdb-7.8/gdb* with the *hsail-** prefix.
+* A modified version of gdb-7.11 to support GPU debugging. Note the main ROCm specific files are located in *gdb-7.11/gdb* with the *rocm-** prefix.
 * The ROCm debug facilities library located in *amd/HwDbgFacilities/*. This library provides symbol processing for GPU kernels.
 
 # Build Steps
