@@ -240,6 +240,10 @@ void hsail_thread_set_focus_command(char *arg, int from_tty)
     {
       char funcExp[256] = "";
       struct expression *expr = NULL;
+      HsailWaveDim3 wg_input;
+      HsailWaveDim3 wi_input;
+      hsail_utils_copy_wavedim3(&wg_input, &gs_unknown_wave_dim);
+      hsail_utils_copy_wavedim3(&wi_input, &gs_unknown_wave_dim);
 
       sprintf(funcExp, "SetHsailThreadCmdInfo(%d,%d,%d,%d,%d,%d)",workGroup[0],workGroup[1],workGroup[2],workItem[0],workItem[1],workItem[2]);
 
@@ -249,15 +253,18 @@ void hsail_thread_set_focus_command(char *arg, int from_tty)
       /* Call the evaluator */
       evaluate_expression (expr);
 
-      gs_active_work_group.x = workGroup[0];
-      gs_active_work_group.y = workGroup[1];
-      gs_active_work_group.z = workGroup[2];
-      gs_active_work_item.x = workItem[0];
-      gs_active_work_item.y = workItem[1];
-      gs_active_work_item.z = workItem[2];
+      wg_input.x = workGroup[0];
+      wg_input.y = workGroup[1];
+      wg_input.z = workGroup[2];
+      wi_input.x = workItem[0];
+      wi_input.y = workItem[1];
+      wi_input.z = workItem[2];
 
-      hsail_thread_print_focus_change();
-
+      hsail_thread_set_focus(wg_input, wg_input);
+      /* We dont need to print the focus change message here
+       * since the handle_hsail_event that is the acknowledgment
+       * of the change in focus will print the change when it actually finishes
+       * */
     }
     else
     {

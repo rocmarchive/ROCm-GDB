@@ -38,6 +38,8 @@ typedef enum _AgentBinaryNotification
 char* hsail_dbginfo_get_srcline_from_buffer(const HwDbgInfo_debug dbg,
                                             const HwDbgInfo_linenum line_num);
 
+/* Note: The input pc has to be in the elf va form. The segment loader API should
+ * resolve this before calling this function */
 bool hsail_dbginfo_get_pc_info(HwDbgInfo_addr pc,
                                HwDbgInfo_linenum* op_line_num,  char** op_file_name);
 

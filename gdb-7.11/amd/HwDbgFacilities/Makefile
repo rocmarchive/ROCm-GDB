@@ -42,6 +42,7 @@ SOURCES=\
     DbgInfoDwarfParser.cpp\
     DbgInfoUtils.cpp\
     DbgInfoLines.cpp\
+    DbgInfoLogging.cpp \
     FacilitiesInterface.cpp
 
 OBJECTS=$(SOURCES:.cpp=.o)

@@ -75,6 +75,8 @@ int hsail_tdep_get_active_wave_count(void);
 
 void* hsail_tdep_map_isa_buffer(void);
 
+void* hsail_tdep_map_loadmap_buffer(void);
+
 void* hsail_tdep_map_momentary_bp_buffer(void);
 
 void* hsail_tdep_map_wave_buffer(void);
@@ -91,15 +93,15 @@ bool hsail_tdep_save_isa(bool is_disassemble_command, const char* hsail_isa_file
  * The other alternative that may be better is that we would have to declare all
  * the constants in the shared header to be static
  */
-int hsail_get_agent_binary_shmem_key(void);
+const int hsail_get_agent_binary_shmem_key(void);
 
 const int hsail_get_agent_binary_shmem_max_size(void);
 
-int hsail_get_wave_buffer_shmem_key(void);
+const int hsail_get_wave_buffer_shmem_key(void);
 
 const int hsail_get_wave_buffer_shmem_max_size(void);
 
-int hsail_get_momentary_bp_buffer_shmem_key(void);
+const int hsail_get_momentary_bp_buffer_shmem_key(void);
 
 const int hsail_get_momentary_bp_buffer_shmem_max_size(void);
 

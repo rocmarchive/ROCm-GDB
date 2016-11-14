@@ -31,19 +31,14 @@
 #include "utils.h"
 #include "observer.h" /* Added for MI notifications */
 
-/* Added for memcpy */
-#include <string.h>
+
+#include <stdbool.h>
+#include <string.h> /* Added for memcpy */
+#include <libgen.h>
 
 /* strtoull */
 #include <stdlib.h>
 #include <ctype.h>
-
-/* Headers for shared mem */
-#include <sys/ipc.h>
-#include <sys/shm.h>
-
-/* This header is needed for FacilitiesInterface */
-#include <stdbool.h>
 
 /* ROCm-GDB headers*/
 #include "rocm-breakpoint.h"
@@ -51,6 +46,7 @@
 #include "rocm-dbginfo.h"
 #include "rocm-fifo-control.h"
 #include "rocm-kernel.h"
+#include "rocm-segment-loader.h"
 #include "rocm-thread.h"
 #include "rocm-tdep.h"
 #include "rocm-utils.h"
@@ -58,6 +54,10 @@
 
 /* Include HwDbgFacilities C interface*/
 #include "FacilitiesInterface.h"
+
+void hsail_breakpoint_print_request(const HsailBreakpointRequest* bp_request);
+
+static int hsail_breakpoint_from_line_resolve(const HsailBreakpointRequest* hsail_bp_req);
 
 static const HsailWaveDim3 gs_unknown_wave_dim = {-1,-1,-1};
 
@@ -210,7 +210,7 @@ static void hsail_breakpoint_copy_bp_condition(HsailBreakpointCondition* dest_co
 void hsail_breakpoint_copy_bp_request(HsailBreakpointRequest* dest_request,
                                       const HsailBreakpointRequest* src_request)
 {
-  int k = 0;
+
   /* A placeholder for when the filename is not present */
   static  const char unknown_file_name[] = "unknown_file";
 
@@ -288,6 +288,33 @@ static void hsail_breakpoint_clear_bp_condition(HsailBreakpointCondition* bp_con
 
   hsail_utils_copy_wavedim3(&bp_condition->work_group_id, &gs_unknown_wave_dim);
   hsail_utils_copy_wavedim3(&bp_condition->work_item_id,  &gs_unknown_wave_dim);
+}
+
+void hsail_breakpoint_adjust_location(struct breakpoint* p_bp)
+{
+  /* Adjustment logic:
+   *    Take the old BP request out of the gdb struct and hang on to it.
+   *    The BP request includes all the state needed to re-resolve user input against a code object
+   *
+   *    We then call the debug facilities code on it again which resolves the BP using
+   *    whatever debug facilities instance, gets the mem va and sends it to the agent
+   * */
+  HsailBreakpointRequest* old_request = (HsailBreakpointRequest*)xmalloc(sizeof(HsailBreakpointRequest));
+  gdb_assert(old_request != NULL);
+  memset(old_request,0,sizeof(HsailBreakpointRequest));
+
+  gdb_assert(p_bp != NULL);
+  gdb_assert(p_bp->hsail_bp_request != NULL);
+
+  hsail_breakpoint_copy_bp_request(old_request, p_bp->hsail_bp_request);
+
+  /* We clear the gdb struct since old_request will repopulate the gdb struct */
+  hsail_breakpoint_clear_bp_request(p_bp->hsail_bp_request);
+
+  hsail_breakpoint_from_line_resolve(old_request);
+
+  /* Free the temp struct */
+  xfree(old_request);
 }
 
 void hsail_breakpoint_clear_bp_request(HsailBreakpointRequest* bp_request)
@@ -610,7 +637,7 @@ static bool hsail_breakpoint_parse_bp_command(const char* hsail_bp_str, HsailBre
             file_str = NULL;
 
             /* Trim the file name potion: */
-            ll = first_colon_loc - 1;
+            ll = first_colon_loc ;
             TRIM_TAILING_SPACES(hsail_bp_str, ll);
             if (0 != ll)
             {
@@ -618,9 +645,11 @@ static bool hsail_breakpoint_parse_bp_command(const char* hsail_bp_str, HsailBre
                     return false;
 
                 file_str = malloc(ll + 1);
+                memset(file_str, '\0', sizeof(char)*(ll+1));
+
                 if (NULL == file_str)
                     return false;
-                memcpy(file_str, hsail_bp_str, ll);
+                memcpy(file_str, hsail_bp_str, ll+1);
                 file_str[ll] = '\0';
             }
 
@@ -634,6 +663,42 @@ static bool hsail_breakpoint_parse_bp_command(const char* hsail_bp_str, HsailBre
 
     /* Unexpected / unhandled breakpoint type: */
     return false;
+}
+
+/* A utility to print the request
+ */
+void hsail_breakpoint_print_request(const HsailBreakpointRequest* bp_request)
+{
+  if (bp_request == NULL)
+    {
+      return;
+    }
+  if (bp_request->gdb_bkpt != NULL)
+    {
+      printf_filtered("GDB ID %d \n", bp_request->gdb_bkpt->number);
+    }
+  else
+    {
+      printf_filtered("GDB ID <unknown>\n");
+    }
+
+  if (bp_request->type == HSAIL_BP_TYPE_ANY_LOCATION)
+    {
+      printf_filtered("Type HSAIL_BP_TYPE_ANY_LOCATION\n");
+      printf_filtered("Function Name %s \n", bp_request->bp.kernel_func.func_name);
+    }
+  else if (bp_request->type == HSAIL_BP_TYPE_KERNEL_FUNCTION)
+    {
+      printf_filtered("Type HSAIL_BP_TYPE_KERNEL_FUNCTION\n");
+      printf_filtered("Function Name %s \n", bp_request->bp.kernel_func.func_name);
+    }
+  else if (bp_request->type == HSAIL_BP_TYPE_SOURCE_LOCATION)
+    {
+      printf_filtered("Type HSAIL_BP_TYPE_SOURCE_LOCATION\n");
+      printf_filtered("File Name %s \n", bp_request->bp.source_location.file_name);
+      printf_filtered("Src Line %s \n", bp_request->bp.source_location.src_line);
+      printf_filtered("Line Num %lld \n", bp_request->bp.source_location.line_num);
+    }
 }
 
 /* This function copies the input string into a breakpoint condition string and
@@ -887,14 +952,19 @@ static int hsail_breakpoint_from_line_resolve(const HsailBreakpointRequest* hsai
       return -1; /* error */
     }
 
-  gdb_bkpt_handle->hsail_pc = addrs[0];
-
+  /* Set to 0 just in case resolving to mem addr fails*/
+  gdb_bkpt_handle->hsail_pc = 0;
+  gdb_bkpt_handle->hsail_pc_relative = addrs[0];
   /* Mechanism to update the breakpoint's HSAIL request structure with source line */
   src_line = hsail_dbginfo_get_srcline_from_buffer(hsail_facilities,
                                                    line_num);
 
+  gdb_assert(hsail_segment_resolve_elfva(gdb_bkpt_handle->hsail_pc_relative,
+                                         &(gdb_bkpt_handle->hsail_pc)) == true);
+
+
   /* We only need to send the 1st one */
-  hsail_enqueue_create_breakpoint_packet(addrs[0],
+  hsail_enqueue_create_breakpoint_packet(gdb_bkpt_handle->hsail_pc,
                                          gdb_bkpt_handle->number,
                                          src_line,
                                          line_num,
@@ -1110,7 +1180,7 @@ void hsail_breakpoint_print_location(const struct breakpoint* p_bp)
       memset(hsail_pc_str, '\0', sizeof(hsail_pc_str));
       memset(hsail_src_str, '\0', sizeof(hsail_src_str));
 
-      sprintf(hsail_pc_str, "PC:0x%04x ", p_bp->hsail_pc);
+      sprintf(hsail_pc_str, "PC:0x%04lx ", p_bp->hsail_pc);
       ui_out_field_string (uiout, "addr", hsail_pc_str);
 
       if (p_bp->hsail_bp_request->bp.source_location.src_line != NULL)
@@ -1160,7 +1230,7 @@ void hsail_breakpoint_print_location(const struct breakpoint* p_bp)
 }
 
 static bool hsail_breakpoint_check_bp_condition(const HsailBreakpointCondition* p_condition,
-                                                  const HsailAgentWaveInfo*       p_wave_info )
+                                                const HsailAgentWaveInfo*       p_wave_info )
 {
   gdb_assert(p_condition != NULL);
   gdb_assert(p_wave_info != NULL);
@@ -1236,7 +1306,7 @@ static bool hsail_breakpoint_lookup_pc(HsailProgramCounter pc, struct breakpoint
       if(iter != NULL)
         {
           if ( (iter->type == bp_hsail) &&
-               (iter->hsail_pc == (int)pc))
+               (iter->hsail_pc == (uint64_t)pc))
             {
               *b = iter;
               ret_code = true;
@@ -1340,33 +1410,36 @@ void hsail_breakpoint_print_stopped_reason(void)
         {
           /* We couldn't find a valid breakpoint, lets try and resolve it using debug facilities */
           HwDbgInfo_debug dbg = hsail_init_hwdbginfo(NULL);
-          HwDbgInfo_addr pc = (HwDbgInfo_addr) (active_waves[i].pc);
-
+          HwDbgInfo_addr wave_pc = (HwDbgInfo_addr) (active_waves[i].pc);
           HwDbgInfo_linenum line_num = 0;
-          char* src_line = NULL;
+          HwDbgInfo_addr elf_va_pc = 0;
           char* src_file_name = NULL;
 
-          if (hsail_dbginfo_get_pc_info(pc, &line_num, &src_file_name) &&
+          gdb_assert(hsail_segment_resolve_memva(wave_pc, (uint64_t*)(&elf_va_pc) ) == true);
+
+          if (hsail_dbginfo_get_pc_info(elf_va_pc, &line_num, &src_file_name) &&
               dbg != NULL)
             {
               /* We really should get valid data if the hsail_dbginfo returns true */
               if (line_num != 0 && src_file_name != NULL)
                 {
+                  char* src_line = NULL;
                   src_line = hsail_dbginfo_get_srcline_from_buffer(dbg, line_num);
                   printf_filtered("[ROCm-gdb]: PC:0x%04lx \t %s %s@line %lld\n",
-                                  (HsailProgramCounter)pc,
+                                  (HsailProgramCounter)wave_pc,
                                   src_line,
-                                  src_file_name,
+                                  basename(src_file_name),
                                   line_num);
-                  free(src_file_name);
+                  xfree(src_line);
                   break;
                 }
               else
                 {
                   printf_filtered("[ROCm-gdb]: PC:0x%04lx \n",
-                                  (HsailProgramCounter)pc);
+                                  (HsailProgramCounter)elf_va_pc);
                 }
             }
+          xfree(src_file_name);
         }
     }
 

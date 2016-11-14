@@ -41,6 +41,7 @@
 #include "rocm-dbginfo.h"
 #include "rocm-kernel.h"
 #include "rocm-print.h"
+#include "rocm-segment-loader.h"
 #include "rocm-tdep.h"
 #include "rocm-utils.h"
 
@@ -52,6 +53,7 @@
 /* forward declaration of internal function that should not be in the header file*/
 static struct value* hsail_print_var_info_with_location(HwDbgInfo_variable dbgVar, size_t var_size);
 
+/* Using an addr (PC) and a name, print the variable*/
 static struct value* hsail_print_var_with_addr(const char* print_name, uint64_t addr, char* printFormat, size_t* format_size);
 
 void hsail_print_all_vars_with_addr(uint64_t addr);
@@ -170,6 +172,7 @@ struct value* hsail_print_expression(const char* exp, char* printFormat, size_t*
   int varNameLen = 0;
   int pos = 0;
   uint64_t addr = 0;
+  uint64_t addr_elfva = 0;
   struct value* retVal = NULL;
 
   gLastPrintError = HSAIL_PRINT_SUCCESS;
@@ -214,11 +217,16 @@ struct value* hsail_print_expression(const char* exp, char* printFormat, size_t*
     gLastPrintError = HSAIL_PRINT_NO_WAVES;
     return NULL;
   }
+  else
+  {
+      bool ret_code = hsail_segment_resolve_memva(addr, &addr_elfva);
+      gdb_assert(ret_code);
+  }
   //retVal =
   // hsail_print_all_vars_with_addr(addr);
 
   /* do the actual printing of the data */
-  retVal = hsail_print_var_with_addr(clean_name, addr, printFormat, format_size);
+  retVal = hsail_print_var_with_addr(clean_name, addr_elfva, printFormat, format_size);
 
   /* delete the cleaned var_name after using it */
   free(clean_name);
@@ -228,6 +236,7 @@ struct value* hsail_print_expression(const char* exp, char* printFormat, size_t*
 
 struct value* hsail_print_var_with_addr(const char* print_name, uint64_t addr, char* printFormat, size_t* format_size)
 {
+  /* print_name denotes the variable name */
   HwDbgInfo_err dbgErr = 0;
   HwDbgInfo_debug dbgInfo = NULL;
   HwDbgInfo_variable dbgVar = NULL;
@@ -693,7 +702,9 @@ void hsail_print_workgroups_info (HsailWaveDim3 active_work_group, struct ui_out
 
 }
 
-static void hsail_print_wave_data(HwDbgInfo_debug dbgInfo, HsailAgentWaveInfo* wave_info_buffer, int wave_index, int index_to_show, HsailWaveDim3 work_item, bool use_work_item, bool mark_active_item)
+static void hsail_print_wave_data(HwDbgInfo_debug dbgInfo,
+                                  HsailAgentWaveInfo* wave_info_buffer,
+                                  int wave_index, int index_to_show, HsailWaveDim3 work_item, bool use_work_item, bool mark_active_item)
 {
 
   /* layout structure of the hardware slot ids for the wavefront id*/
@@ -765,7 +776,7 @@ static void hsail_print_wave_data(HwDbgInfo_debug dbgInfo, HsailAgentWaveInfo* w
   {
     /* get the source line information */
     HwDbgInfo_err dbgErr = 0;
-    HwDbgInfo_addr addr = NULL;
+    uint64_t elfva_addr = 0;
     HwDbgInfo_linenum line_num = 0;
 
     char* file_name = NULL;
@@ -824,14 +835,19 @@ static void hsail_print_wave_data(HwDbgInfo_debug dbgInfo, HsailAgentWaveInfo* w
         sprintf(abs_wi_id_buffer,"%s","");
       }
 
+    gdb_assert(hsail_segment_resolve_memva(wave_info_buffer[wave_index].pc, &elfva_addr ) == true);
+
     /* print the source line and pc */
-    dbgErr = hwdbginfo_nearest_mapped_addr(dbgInfo, wave_info_buffer[wave_index].pc,  &addr);
+    dbgErr = hwdbginfo_nearest_mapped_addr(dbgInfo,
+                                           wave_info_buffer[wave_index].pc,
+                                           (HwDbgInfo_addr*)(&elfva_addr));
     if (dbgErr != HWDBGINFO_E_SUCCESS)
       {
         sprintf(source_line_buffer,"dbginfo error");
       }
 
-    if (!hsail_dbginfo_get_pc_info(addr, &line_num, &file_name))
+
+    if (!hsail_dbginfo_get_pc_info(elfva_addr, &line_num, &file_name))
       {
         sprintf(source_line_buffer,"dbginfo error");
       }
@@ -1060,7 +1076,9 @@ static void hsail_print_gpu_disassembly_get_window(const char* hsail_file_name, 
     }
 
   *start = 0;
-  present_address = hsail_tdep_get_current_pc();
+
+  gdb_assert(hsail_segment_resolve_memva(hsail_tdep_get_current_pc(),
+                                         &present_address) == true);
 
   if(hsail_tdep_get_active_wave_count() > 0)
     {
@@ -1104,7 +1122,9 @@ static void hsail_print_gpu_disassembly_get_window(const char* hsail_file_name, 
 /* Check if the address on the line matches the active PC and print the line accordingly*/
 static void hsail_print_gpu_disassembly_line(const char* ip_isa_line, size_t len)
 {
-  uint64_t line_address = 0;
+  uint64_t line_elf_va_address = 0;
+  uint64_t present_elf_va_address = 0;
+
   char* isa_line = NULL;
   char *token = NULL;
   const char first_delim[] = "/:";
@@ -1116,9 +1136,12 @@ static void hsail_print_gpu_disassembly_line(const char* ip_isa_line, size_t len
       return;
     }
 
-  hsail_print_parse_gpu_disassembly_line(ip_isa_line, len, &line_address);
+  gdb_assert(hsail_segment_resolve_memva(hsail_tdep_get_current_pc(),
+                                         &present_elf_va_address) == true);
 
-  if (line_address == hsail_tdep_get_current_pc() &&
+  hsail_print_parse_gpu_disassembly_line(ip_isa_line, len, &line_elf_va_address);
+
+  if (line_elf_va_address == present_elf_va_address &&
       hsail_tdep_get_active_wave_count() > 0)
     {
       printf_filtered("=> %s", ip_isa_line);
@@ -1133,7 +1156,11 @@ static void hsail_print_gpu_disassembly_line(const char* ip_isa_line, size_t len
 bool hsail_print_gpu_disassembly(const char* arg)
 {
   const char hsail_isa_file_name[] = "temp_isa";
-  const char hsail_disassemble_token[] = "Disassembly:";
+  /* This token was used with amdhsacod */
+  /* const char hsail_disassemble_token[] = "Disassembly:"; */
+
+  /* This token was used with llvm-objdump */
+  const char hsail_disassemble_token[] = "Disassembly of";
 
   FILE* temp_file_handle = NULL;
   char* isa_line = NULL;
@@ -1145,6 +1172,7 @@ bool hsail_print_gpu_disassembly(const char* arg)
     {
       bool is_disassembly_found = false;
       size_t len = 0;
+
       /* Count for how many lines of the file have been looked at.
        * We count the prolog block too */
       int file_line_count = 0;
@@ -1164,7 +1192,7 @@ bool hsail_print_gpu_disassembly(const char* arg)
       temp_file_handle = fopen(hsail_isa_file_name,"rt");
       gdb_assert(temp_file_handle != NULL);
 
-      /* Loop to get to "Disassembly:" line */
+      /* Loop to get to  line with hsail_disassemble_token */
       while (!feof(temp_file_handle))
         {
           file_line_count++;

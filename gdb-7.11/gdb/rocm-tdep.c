@@ -63,6 +63,7 @@
 #include "rocm-infcmd.h"
 #include "rocm-kernel.h"
 #include "rocm-print.h"
+#include "rocm-segment-loader.h"
 #include "rocm-thread.h"
 #include "rocm-trace.h"
 #include "rocm-tdep.h"
@@ -100,6 +101,56 @@ static bool gs_stage2_has_run = false;
 
 static int gs_gpuBkptCrtCount = 0;
 
+/* Return the key for the shared mem location that has the binary*/
+const int hsail_get_agent_binary_shmem_key(void)
+{
+  return g_DBEBINARY_SHMKEY;
+}
+
+/* Return the max size for the shared mem location that has the binary*/
+const int hsail_get_agent_binary_shmem_max_size(void)
+{
+  return g_BINARY_BUFFER_MAXSIZE;
+}
+
+
+/* Return the key for the shared mem location that has the binary*/
+const int hsail_get_wave_buffer_shmem_key(void)
+{
+  return g_WAVE_BUFFER_SHMKEY;
+}
+
+/* Return the max size for the shared mem location that has the wave info*/
+const int hsail_get_wave_buffer_shmem_max_size(void)
+{
+  return g_WAVE_BUFFER_MAXSIZE;
+}
+
+/* Return the key for the shared mem location that has the momentary bp list*/
+const int hsail_get_momentary_bp_buffer_shmem_key(void)
+{
+  return g_MOMENTARY_BP_BUFFER_SHMKEY;
+}
+
+/* Return the max size for the shared mem location that has momentary bp list*/
+const int hsail_get_momentary_bp_buffer_shmem_max_size(void)
+{
+  return g_MOMENTARY_BP_BUFFER_MAXSIZE;
+}
+
+
+/* Return the key for the shared mem location that has the loaded segment list*/
+static const int hsail_get_loadmap_buffer_shmem_key(void)
+{
+  return g_LOADMAP_SHMKEY;
+}
+
+/* Return the max size for the shared mem location that has the loaded segment list*/
+static const int hsail_get_loadmap_buffer_shmem_max_size(void)
+{
+  return g_LOADMAP_MAXSIZE;
+}
+
 static void
 gpu_solib_loaded (struct so_list *solib)
 {
@@ -126,7 +177,11 @@ gpu_solib_loaded (struct so_list *solib)
 /* Include all post create steps here */
 void hsail_linux_post_inferior_create(void)
 {
+  /* add the observer to set a breakpoint in the GPU Debug Agent*/
   observer_attach_solib_loaded(gpu_solib_loaded);
+
+  /* Do any loader setup steps*/
+  hsail_segment_initialize_loader();
 }
 
 /*
@@ -415,6 +470,40 @@ bool hsail_tdep_save_isa(bool is_disassemble_command, const char* hsail_isa_file
   return ret_code;
 }
 
+
+void* hsail_tdep_map_loadmap_buffer(void)
+{
+  struct ui_out* uiout = current_uiout;
+
+  void* pShm = NULL;
+  int shmid = -1;
+  const int max_shared_mem_size = hsail_get_loadmap_buffer_shmem_max_size();
+
+  gdb_assert(NULL != uiout);
+  /*1M used is hard wired for now*/
+
+  if (hsail_is_focus_device() == false || is_hsail_linux_initialized() == false)
+    {
+      return NULL;
+    }
+
+  shmid = shmget(hsail_get_loadmap_buffer_shmem_key(), max_shared_mem_size, 0666);
+
+  if (shmid <= 0)
+    {
+      ui_out_text(uiout, "wave info buffer mapping: shmid is invalid\n");
+    }
+
+  gdb_assert(shmid > 0);
+
+  /* Get shm pointer */
+  pShm = (void*)shmat(shmid, NULL, 0);
+
+  gdb_assert(pShm != NULL);
+
+  return pShm;
+}
+
 void* hsail_tdep_map_momentary_bp_buffer(void)
 {
   struct ui_out* uiout = current_uiout;
@@ -585,6 +674,9 @@ void hsail_linux_close(void)
       gs_stage2_has_run = false;
       delete_hsa_agent_internal_breakpoint();
       gs_gpuBkptCrtCount = 0;
+
+      /* Shut the loader */
+      hsail_segment_shutdown_loader();
     }
 
   gdb_assert(is_hsail_linux_initialized() == 0);
@@ -677,42 +769,7 @@ int hsail_get_read_fifo_handler(void)
   return g_hsail_fifo_read_descriptor;
 }
 
-/* Return the key for the shared mem location that has the binary*/
-int hsail_get_agent_binary_shmem_key(void)
-{
-  return g_DBEBINARY_SHMKEY;
-}
 
-/* Return the max size for the shared mem location that has the binary*/
-const int hsail_get_agent_binary_shmem_max_size(void)
-{
-  return g_BINARY_BUFFER_MAXSIZE;
-}
-
-
-/* Return the key for the shared mem location that has the binary*/
-int hsail_get_wave_buffer_shmem_key(void)
-{
-  return g_WAVE_BUFFER_SHMKEY;
-}
-
-/* Return the max size for the shared mem location that has the wave info*/
-const int hsail_get_wave_buffer_shmem_max_size(void)
-{
-  return g_WAVE_BUFFER_MAXSIZE;
-}
-
-/* Return the key for the shared mem location that has the momentary bp list*/
-int hsail_get_momentary_bp_buffer_shmem_key(void)
-{
-  return g_MOMENTARY_BP_BUFFER_SHMKEY;
-}
-
-/* Return the max size for the shared mem location that has momentary bp list*/
-const int hsail_get_momentary_bp_buffer_shmem_max_size(void)
-{
-  return g_MOMENTARY_BP_BUFFER_MAXSIZE;
-}
 
 /* Just a debugging helper function */
 void hsail_tdep_print_notification_type(const HsailNotification notification)
@@ -879,7 +936,7 @@ void handle_hsail_event(int err, gdb_client_data client_data)
               }
             else
               {
-                printf_filtered("HSAIL kernel source debugging will not occur\n");
+                rocm_printf_filtered("HSAIL kernel source debugging will not occur\n");
                 hsail_dbginfo_set_facilities_status(HSAIL_AGENT_BINARY_UNKNOWN);
               }
 
@@ -887,6 +944,8 @@ void handle_hsail_event(int err, gdb_client_data client_data)
             hsail_trace_add_dispatch(&fifo_data);
 
             hsail_flush_breakpoint_command_buffer();
+
+            adjust_breakpoint_all_hsail();
 
             break;
           }

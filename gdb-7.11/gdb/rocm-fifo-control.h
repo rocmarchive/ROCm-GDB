@@ -40,7 +40,7 @@ void hsail_enqueue_continue_dispatch_packet(void);
 
 void hsail_enqueue_create_breakpoint_request_buffer(const HsailBreakpointRequest* request);
 
-void hsail_enqueue_create_breakpoint_packet(const int pc,
+void hsail_enqueue_create_breakpoint_packet(const uint64_t pc,
                                             const int gdb_bkpt_num,
                                             const char* src_line,
                                             const int line_num,

@@ -32,11 +32,13 @@
 #include "utils.h"
 
 #include "rocm-dbginfo.h"
+#include "rocm-segment-loader.h"
 #include "rocm-tdep.h"
 #include "rocm-utils.h"
 #include "CommunicationControl.h"
 
-/* Added for memcpy */
+/* Added for memcpy and file path processing*/
+#include <libgen.h>
 #include <string.h>
 
 /* strtoull */
@@ -58,7 +60,7 @@ static const char default_file_name[] = "temp_source";
 /* The active file used by the kernel, this will mostly be used in the cases where
  * the kerenl source is in memory and it is saved by the debugger
  * */
-static char* active_kernel_src_file_name = NULL;
+static char* active_kernel_src_file_path = NULL;
 
 /*
  * These functions assume that we will only get one binary from the agent once
@@ -167,26 +169,50 @@ static bool hsail_dbginfo_init_source_buffer(HwDbgInfo_debug dbg_op)
         {
           printf_filtered("Could not get the first filename ");
         }
-      gdb_assert(errOut == HWDBGINFO_E_SUCCESS);
-      hsail_utils_copy_string(&active_kernel_src_file_name, file_name);
+      else
+        {
+          size_t source_len = 0;
+          gdb_assert(errOut == HWDBGINFO_E_SUCCESS);
+          hsail_utils_copy_string(&active_kernel_src_file_path, file_name);
 
-      xfree(file_name);
+          ret_code = hsail_utils_read_file_to_array(active_kernel_src_file_path,
+                                         &gs_hsail_source,
+                                         &source_len);
+
+          rocm_printf_filtered("Kernel saved to %s\n", active_kernel_src_file_path);
+          xfree(file_name);
+        }
     }
   return ret_code;
 }
 
 const char* hsail_dbginfo_get_active_file_name(void)
 {
-  if (active_kernel_src_file_name == NULL)
+  char* path_delim_posn = NULL;
+  if (active_kernel_src_file_path == NULL)
     {
-      hsail_utils_copy_string(&active_kernel_src_file_name, default_file_name);
+      hsail_utils_copy_string(&active_kernel_src_file_path, default_file_name);
     }
 
-  return active_kernel_src_file_name;
+  path_delim_posn = strrchr(active_kernel_src_file_path, '/');
+  if (path_delim_posn != NULL)
+    {
+      char* file_name = basename(active_kernel_src_file_path);
+      return file_name;
+    }
+  else
+    {
+      return active_kernel_src_file_path;
+    }
+
+  return NULL;
 }
 
 
-/* Return line number and filename for an input PC*/
+/* Return line number and filename for an input PC
+ * Note: The input pc has to be in the elf va form. The segment loader API should
+ * resolve this before calling this function
+ * */
 bool hsail_dbginfo_get_pc_info(HwDbgInfo_addr pc,  HwDbgInfo_linenum* op_line_num, char** op_file_name)
 {
   bool ret_code = false;
@@ -207,10 +233,12 @@ bool hsail_dbginfo_get_pc_info(HwDbgInfo_addr pc,  HwDbgInfo_linenum* op_line_nu
     {
       size_t out_filename_len =0;
       size_t in_filename_len =1024;
-      char* filename = (char*)malloc(sizeof(char)*in_filename_len);
-      gdb_assert(filename != NULL);
-      memset(filename, '\0', sizeof(char)*in_filename_len );
+      char* out_filename = (char*)malloc(sizeof(char)*in_filename_len);
+      gdb_assert(out_filename != NULL);
+      memset(out_filename, '\0', sizeof(char)*in_filename_len );
 
+      // for saxpy
+      //pc += 4096;
       err = hwdbginfo_addr_to_line(dbg, pc, &loc);
       if (err != HWDBGINFO_E_SUCCESS)
         {
@@ -218,22 +246,22 @@ bool hsail_dbginfo_get_pc_info(HwDbgInfo_addr pc,  HwDbgInfo_linenum* op_line_nu
         }
       err = hwdbginfo_code_location_details(loc,
                                             &line_num,
-                                            in_filename_len, filename, &out_filename_len);
+                                            in_filename_len, out_filename, &out_filename_len);
       if (err != HWDBGINFO_E_SUCCESS)
         {
           printf("Debug facilities in code location error %d", err);
         }
 
-      if (filename != NULL)
+      if (out_filename != NULL)
         {
-          if (strstr(filename, "hsa::self().elf") != NULL)
+          if (strstr(out_filename, "hsa::self().elf") != NULL)
             {
               hsail_utils_copy_string(op_file_name,
                                       hsail_dbginfo_get_active_file_name());
             }
           else
             {
-              *op_file_name = filename;
+              *op_file_name = out_filename;
             }
         }
       *op_line_num = line_num;
@@ -477,7 +505,9 @@ HwDbgInfo_debug hsail_init_hwdbginfo(HsailNotificationPayload* payload)
   void* pShm = NULL;
 
   /* HwDbgFacilities objects */
-  HwDbgInfo_err errOut = 0;
+  HwDbgInfo_err errout_twolevel= HWDBGINFO_E_UNEXPECTED;
+  HwDbgInfo_err errout_onelevel= HWDBGINFO_E_UNEXPECTED;
+
   HwDbgInfo_debug dbg_op = NULL;
 
   const int max_shared_mem_size = hsail_get_agent_binary_shmem_max_size();
@@ -496,12 +526,12 @@ HwDbgInfo_debug hsail_init_hwdbginfo(HsailNotificationPayload* payload)
   dbg_op = NULL;
   if(hsail_is_debug_facilities_loaded())
     {
-
       /* A copy of the shared memory segment */
       void* dbe_binary = NULL;
       size_t dbe_binary_size = 0;
-
       int shmid = -1;
+
+      hsail_segment_update_loadmap();
 
       /*1M used is hard wired for now*/
       shmid = shmget(hsail_get_agent_binary_shmem_key(), max_shared_mem_size, 0666);
@@ -537,10 +567,10 @@ HwDbgInfo_debug hsail_init_hwdbginfo(HsailNotificationPayload* payload)
       hsail_breakpoint_save_binary_to_file(dbe_binary_size, dbe_binary);
       */
 
-      /* Use Obsidian (HSA 1.0) binary format (May. 2015): */
+      /* Attempt to initialize as a HSAIL backend binary*/
       dbg_op = hwdbginfo_init_with_hsa_1_0_binary(dbe_binary,
                                                   dbe_binary_size,
-                                                  &errOut);
+                                                  &errout_twolevel);
 
       /* Keep this printf here as a reminder for a
        * quick way to check that the IPC happened correctly*/
@@ -552,14 +582,36 @@ HwDbgInfo_debug hsail_init_hwdbginfo(HsailNotificationPayload* payload)
         } */
 
       /* If we get a no HL binary, return code, we try to initialize as a single level binary */
-      if (errOut == HWDBGINFO_E_NOHLBINARY)
+      if (errout_twolevel == HWDBGINFO_E_NOHLBINARY)
         {
           dbg_op = hwdbginfo_init_with_single_level_binary(dbe_binary,
                                                            dbe_binary_size,
-                                                           &errOut);
+                                                           &errout_onelevel);
         }
 
-      if (errOut != HWDBGINFO_E_SUCCESS)
+      /* We have an issue with the messaging here
+       *
+       * While debugging HSAIL if we have a code object where BRIG Dwarf is not
+       * present but ISA dwarf is present, debug facilities can successfully initialize a
+       * 1 level context. In this case there is an extra message saying that kernel
+       * debugging is not supported for LC.
+       *
+       * In the near future, debug facilities needs to be able to tell the difference
+       * between an incomplete 2 level code object and a complete 1 level code object.
+       * Since we dont support debugging LC for 1.3, this is not a big issue.
+       *  */
+
+      /* If we have a single level binary, dont try to debug it */
+      if (errout_twolevel == HWDBGINFO_E_NOHLBINARY && errout_onelevel == HWDBGINFO_E_SUCCESS)
+        {
+          /* We need to shutdown debug facilities if it is initialized */
+          hwdbginfo_release_debug_info(&dbg_op);
+          dbg_op = NULL;
+
+          ui_out_text(uiout, "[ROCm-gdb]: Kernel debugging is not supported for applications compiled with HCC-LC\n");
+          fflush(stdout);
+        }
+      if (errout_twolevel != HWDBGINFO_E_SUCCESS )
         {
           /* HwDbgFacilities init: Called DebugFacilities Incorrectly.
            * We can add more detailed messages such as low-level dwarf or high level dwarf missing in the future
@@ -567,22 +619,26 @@ HwDbgInfo_debug hsail_init_hwdbginfo(HsailNotificationPayload* payload)
           ui_out_text(uiout, "[ROCm-gdb]: The code object for the current dispatch does not contain debug information\n");
           fflush(stdout);
 
-          free_current_contents(&dbe_binary);
-          return NULL;
+          dbg_op = NULL;
+
         }
 
       /* Test function to print all the mapped addresses and line numbers */
       /* hsail_dbginfo_test_all_mapped_addrs(dbg_op); */
 
-      gdb_assert(errOut == HWDBGINFO_E_SUCCESS);
-
       /* We can clear the dbe_binary buffer once we have initialized HWDbgFacilities */
-      free_current_contents(&dbe_binary);
-
-      /* Get the kernel source*/
-      if (!hsail_dbginfo_init_source_buffer(dbg_op))
+      if (dbe_binary != NULL)
         {
-          ui_out_text(uiout, "[ROCm-gdb]: HwDbgFacilities get hsail text error\n");
+          free_current_contents(&dbe_binary);
+        }
+
+      /* Get the kernel source, only if the 2 level initialization was good*/
+      if (errout_twolevel == HWDBGINFO_E_SUCCESS)
+        {
+          if (!hsail_dbginfo_init_source_buffer(dbg_op))
+          {
+            ui_out_text(uiout, "[ROCm-gdb]: HwDbgFacilities get hsail text error\n");
+          }
         }
 
       /* Detach shared memory */
@@ -598,8 +654,8 @@ HwDbgInfo_debug hsail_init_hwdbginfo(HsailNotificationPayload* payload)
 
   return gs_DbgInfo;
   /*
-   * This function's caller will now call the Facilities API to get the pc;
-   * */
+   * This function's caller will use the returned context to query the
+   * Debug Facilities API */
 }
 
 void hsail_free_hwdbginfo(void)
@@ -617,10 +673,10 @@ void hsail_free_hwdbginfo(void)
 
       gs_DbgInfo = NULL;
 
-      if (active_kernel_src_file_name != NULL)
+      if (active_kernel_src_file_path != NULL)
         {
-          xfree(active_kernel_src_file_name);
-          active_kernel_src_file_name =  NULL;
+          xfree(active_kernel_src_file_path);
+          active_kernel_src_file_path =  NULL;
         }
     }
 }

@@ -35,6 +35,7 @@
 #include "rocm-dbginfo.h"
 #include "rocm-fifo-control.h"
 #include "rocm-infcmd.h"
+#include "rocm-segment-loader.h"
 #include "rocm-tdep.h"
 #include "CommunicationControl.h"
 
@@ -103,9 +104,6 @@ static void hsail_step_write_momentary_breakpoints(HwDbgInfo_debug dbg,
                                                    HwDbgInfo_addr* step_addrs)
 {
   int i = 0;
-  HwDbgInfo_code_location loc = NULL;
-  HwDbgInfo_linenum line_num = 0;
-
   HsailMomentaryBP* momentary_bp = NULL;
 
   int momentary_bp_data_size = 0;
@@ -135,13 +133,17 @@ static void hsail_step_write_momentary_breakpoints(HwDbgInfo_debug dbg,
 
   for(i=0; i < step_addr_count; i++)
     {
-      loc = NULL;
-      line_num = 0;
+      HwDbgInfo_code_location loc = NULL;
+      HwDbgInfo_linenum line_num = 0;
+      uint64_t mem_va_addr = 0;
+      bool ret_code = false;
 
       hwdbginfo_addr_to_line(dbg, step_addrs[i], &loc);
       hwdbginfo_code_location_details(loc, &line_num, 0, NULL, NULL);
 
-      momentary_bp[i].m_pc      = step_addrs[i];
+      ret_code = hsail_segment_resolve_elfva(step_addrs[i], &(momentary_bp[i].m_pc));
+      gdb_assert(ret_code == true);
+
       momentary_bp[i].m_lineNum = line_num;
     }
 

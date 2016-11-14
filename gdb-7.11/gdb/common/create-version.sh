@@ -34,7 +34,7 @@ echo '#include "version.h"' >> version.c-tmp
 echo 'const char version[] = "'"`sed q version.tmp`"'";' >> version.c-tmp
 echo 'const char host_name[] = "'"$host_alias"'";' >> version.c-tmp
 echo 'const char target_name[] = "'"$target_alias"'";' >> version.c-tmp
-version=`cat $srcdir/../../Scripts/hsail-gdb-version.txt`
+version=`cat $srcdir/common/hsail-gdb-version.txt`
 echo 'const char hsail_gdb_version[] = "'"$version.$BUILD_NUMBER"'";' >> version.c-tmp
 mv version.c-tmp $output
 rm -f version.tmp

@@ -335,7 +335,7 @@ static void hsail_push_command(HsailCommandPacket packet)
  * Create a breakpoint packet and put it to the fifo.
  * We could pass the hsail breakpoint request here but we also need to send PC
  */
-void hsail_enqueue_create_breakpoint_packet(const int pc,
+void hsail_enqueue_create_breakpoint_packet(const uint64_t pc,
                                             const int gdb_bkpt_num,
                                             const char* src_line,
                                             const int line_num,

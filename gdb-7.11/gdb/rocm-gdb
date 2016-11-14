@@ -55,6 +55,7 @@ IPCResourceCleanup()
     ipcrm -M 1234 2> /dev/null
     ipcrm -M 2222 2> /dev/null
     ipcrm -M 1111 2> /dev/null
+    ipcrm -M 7890 2> /dev/null
     
     # The FIFO will be created in the same directory that the script is in 
     rm -f fifo-agent-w-gdb-r 2> /dev/null

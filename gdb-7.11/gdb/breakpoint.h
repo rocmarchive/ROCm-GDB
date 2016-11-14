@@ -781,9 +781,11 @@ struct breakpoint
      *  */
     HsailBreakpointRequest* hsail_bp_request;
 
-    /* GPU Program counter */
-    int hsail_pc;
+    /* GPU Program counter, based on a memory address*/
+    uint64_t hsail_pc;
 
+    /* The elf va obtained from the code object*/
+    uint64_t hsail_pc_relative;
   };
 
 /* An instance of this type is used to represent a watchpoint.  It
@@ -1225,6 +1227,9 @@ extern void update_breakpoint_locations (struct breakpoint *b,
 extern void breakpoint_re_set (void);
 
 void breakpoint_re_set_all_hsail(void);
+
+/* Adjust all GPU breakpoints memory addresses for new dispatch */
+void adjust_breakpoint_all_hsail(void);
 
 extern void breakpoint_re_set_thread (struct breakpoint *);
 

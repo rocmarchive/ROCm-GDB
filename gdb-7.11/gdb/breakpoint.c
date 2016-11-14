@@ -9976,6 +9976,24 @@ create_breakpoint_hsail(struct gdbarch *gdbarch,
   return 0;
 }
 
+void adjust_breakpoint_all_hsail(void)
+{
+  struct breakpoint *b = NULL;
+  ALL_BREAKPOINTS(b)
+    {
+      if (b != NULL)
+        {
+          if (b->type == bp_hsail &&  b->hsail_bp_request != NULL)
+            {
+              if (b->hsail_bp_request->type == HSAIL_BP_TYPE_SOURCE_LOCATION )
+                {
+                  hsail_breakpoint_adjust_location(b);
+                }
+            }
+        }
+    }
+}
+
 static int
 delete_breakpoint_hsail(struct breakpoint *bpt)
 {
@@ -13643,7 +13661,7 @@ bkpt_print_mention (struct breakpoint *b)
     }
   else
     {
-      printf_filtered (_("\t PC: %d"), b->hsail_pc);
+      printf_filtered (_("\t PC: %ld"), b->hsail_pc);
     }
 }
 
@@ -16599,6 +16617,7 @@ initialize_breakpoint_ops (void)
 
 static char* gs_pGpuBpStr = NULL;
 
+/* This trigger breakpoint is created when a solib is loaded */
 void
 create_hsa_gpu_breakpoint_trigger(const char *location)
 {

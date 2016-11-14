@@ -86,6 +86,9 @@ void hsail_breakpoint_clear_bp_request(HsailBreakpointRequest* bp_request);
 
 bool hsail_breakpoint_parse_bp_request(const char* hsail_bp_str, const char* extra_str, HsailBreakpointRequest* bp_request);
 
+/* Adjust the breakpoint's memory address based on the presently loaded segment */
+void hsail_breakpoint_adjust_location(struct breakpoint* p_bp);
+
 /* Parse the hsail breakpoint command string and check if the "rocm:" identifier is present */
 int is_hsail_breakpoint(const char *arg);
 
