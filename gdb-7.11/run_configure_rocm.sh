@@ -21,13 +21,14 @@ then
 	echo "smash: Clean up config cache"
 	echo "debug: Use debug version of Debug Facilities in (amd/HwDbgFacilities) and build gdb with debug symbols"
 	echo "release: Use release version of Debug Facilities in (amd/HwDbgFacilities) and build gdb for release"
-	exit -1
+	exit 
 fi
 
 # Smash the old build otherwise it complains about config.cache
 if [[ $IPOPTION == 'smash' ]]
 then
 	bash run_clean_cache.sh
+        exit $?
 fi
 
 hwdbgfct_opt=""
@@ -48,35 +49,44 @@ GenerateMakeScript()
 	echo "# Do not edit manually, will be overwritten when you call run_configure_rocm.sh" >> run_make_rocm.sh
 	echo "# " >> run_make_rocm.sh
 	echo "# Call HwDbgFacilities make" >> run_make_rocm.sh
-	echo "cd ./amd/HwDbgFacilities/" >> run_make_rocm.sh
+	echo "cd ../amd/HwDbgFacilities/" >> run_make_rocm.sh
 	echo "make$hwdbgfct_opt" >> run_make_rocm.sh
-	echo "cd ../../" >> run_make_rocm.sh
+	echo "cd -" >> run_make_rocm.sh
 	echo "# Set the name of the facilities library we will use" >> run_make_rocm.sh
 	echo "export AMD_DEBUG_FACILITIES='$1'" >> run_make_rocm.sh
 	echo "# Call GDB's make" >> run_make_rocm.sh
 	echo "make" >> run_make_rocm.sh
 	echo "# Rename the GDB executable so the ROCm-gdb script can run it" >> run_make_rocm.sh
 	echo "mv gdb/gdb gdb/amd-gdb" >> run_make_rocm.sh
+	echo "# Copy wrapper scripts to build directory from source directory" >> run_make_rocm.sh
+	echo "cp ../gdb/rocm-gdb gdb/rocm-gdb" >> run_make_rocm.sh
+	echo "cp ../gdb/rocm-gdb-local gdb/rocm-gdb-local" >> run_make_rocm.sh
 	chmod +x run_make_rocm.sh
 }
 
-# <<<<Build Option 1>>>>>
+
+mkdir build_$IPOPTION
+cd build_$IPOPTION
+# Build Option 1
 # With debug symbols of GDB and debug version of Debug facilities
 if [[ $IPOPTION == 'debug' ]]
 then
-./configure --enable-rocm --with-python \
- CFLAGS=' -g  -I../amd/HwDbgFacilities/include -I../amd/include -fPIC '\
- LDFLAGS=' -L../lib/x86_64 -pthread'
+../configure --enable-rocm --with-python \
+ CFLAGS=' -g  -I../../amd/HwDbgFacilities/include -I../../amd/include -fPIC '\
+ LDFLAGS=' -L../../lib/x86_64 -pthread'
  hwdbgfct_opt=" -e HSAIL_build=debug"
  GenerateMakeScript -lAMDHwDbgFacilities-x64-d
 fi
 
-# <<<<Build Option 2>>>>>
+# Build Option 2
 # With release version of GDB and release version of debug facilities
 if [[ $IPOPTION == 'release' ]]
 then
-./configure --enable-rocm \
- CFLAGS=' -I../amd/HwDbgFacilities/include -I../amd/include -fPIC '\
- LDFLAGS=' -L../lib/x86_64 -pthread'
+../configure --enable-rocm --with-python \
+ CFLAGS=' -I../../amd/HwDbgFacilities/include -I../../amd/include -fPIC '\
+ LDFLAGS=' -L../../lib/x86_64 -pthread'
  GenerateMakeScript -lAMDHwDbgFacilities-x64
 fi
+
+cd ..
+

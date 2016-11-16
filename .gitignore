@@ -18,10 +18,13 @@ run_make_rocm.sh
 amd-gdb
 libAMDHwDbgFacilities-x64-d.so
 libAMDHwDbgFacilities-x64.so
+build_release
+build_debug
 
 # Eclipse files
 .cproject
 .project
+.settings
 
 # Copied the below from GNU .gitignore 
 # https://sourceware.org/git/gitweb.cgi?p=binutils-gdb.git;a=tree
@@ -89,3 +92,4 @@ stamp-*
 /isl*
 
 # End GNU .gitignore 
+/Debug/

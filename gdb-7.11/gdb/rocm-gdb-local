@@ -43,7 +43,10 @@ REALPATH="$( dirname "$SOURCE" )"
 # A wrapper script that calls rocm-gdb with just a dummy "SDK" name in the LD_LIBRARY_PATH
 # Needed for someone else building gdb from github and using the Debug SDK which could be anywhere
 #
+# The rocm-gdb-local script will be copied to the build_debug / build_release locations and 
+# shouldn't be run from the gdb-X.X/gdb/
+#
 # If you are using rocm-gdb-local, you need to set the LD_LIBRARY_PATH to point to
 # the library location of the Debug SDK (i.e. AMDGPUKernelDebugSDK/lib/x86_64)
-export LD_LIBRARY_PATH=/dummy/gpudebugsdk/lib/x86_64:$REALPATH/../lib/x86_64:${LD_LIBRARY_PATH}
+export LD_LIBRARY_PATH=/dummy/gpudebugsdk/lib/x86_64:$REALPATH/../../lib/x86_64:${LD_LIBRARY_PATH}
 $REALPATH/rocm-gdb $GDB_ARGS
