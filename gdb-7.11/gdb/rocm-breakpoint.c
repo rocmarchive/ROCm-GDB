@@ -40,6 +40,13 @@
 #include <stdlib.h>
 #include <ctype.h>
 
+/* Headers for shared mem */
+#include <sys/ipc.h>
+#include <sys/shm.h>
+
+/* This header is needed for FacilitiesInterface */
+#include <stdbool.h>
+
 /* ROCm-GDB headers*/
 #include "rocm-breakpoint.h"
 #include "rocm-cmd.h"
@@ -1350,7 +1357,10 @@ void hsail_breakpoint_print_stopped_reason(void)
   int num_waves = hsail_tdep_get_active_wave_count();
   HsailAgentWaveInfo* active_waves = (HsailAgentWaveInfo*)hsail_tdep_map_wave_buffer();
   int i=0;
+  bool is_breakpoint_found = false;
   HsailWaveDim3 focus_wg, focus_wi;
+  hsail_utils_copy_wavedim3(&focus_wg, &gs_unknown_wave_dim);
+  hsail_utils_copy_wavedim3(&focus_wi, &gs_unknown_wave_dim);
 
   /* Handle the function breakpoint case first, it should only happen when
    * no waves are active*/
@@ -1403,45 +1413,55 @@ void hsail_breakpoint_print_stopped_reason(void)
                   hsail_breakpoint_print_condition_string(b);
                   printf_filtered("\n");
                 }
+              is_breakpoint_found = true;
               break;
             }
         }
-      else
-        {
-          /* We couldn't find a valid breakpoint, lets try and resolve it using debug facilities */
-          HwDbgInfo_debug dbg = hsail_init_hwdbginfo(NULL);
-          HwDbgInfo_addr wave_pc = (HwDbgInfo_addr) (active_waves[i].pc);
-          HwDbgInfo_linenum line_num = 0;
-          HwDbgInfo_addr elf_va_pc = 0;
-          char* src_file_name = NULL;
-
-          gdb_assert(hsail_segment_resolve_memva(wave_pc, (uint64_t*)(&elf_va_pc) ) == true);
-
-          if (hsail_dbginfo_get_pc_info(elf_va_pc, &line_num, &src_file_name) &&
-              dbg != NULL)
-            {
-              /* We really should get valid data if the hsail_dbginfo returns true */
-              if (line_num != 0 && src_file_name != NULL)
-                {
-                  char* src_line = NULL;
-                  src_line = hsail_dbginfo_get_srcline_from_buffer(dbg, line_num);
-                  printf_filtered("[ROCm-gdb]: PC:0x%04lx \t %s %s@line %lld\n",
-                                  (HsailProgramCounter)wave_pc,
-                                  src_line,
-                                  basename(src_file_name),
-                                  line_num);
-                  xfree(src_line);
-                  break;
-                }
-              else
-                {
-                  printf_filtered("[ROCm-gdb]: PC:0x%04lx \n",
-                                  (HsailProgramCounter)elf_va_pc);
-                }
-            }
-          xfree(src_file_name);
-        }
     }
+
+  /* We need to do the printing only if no breakpoint was found
+   * when we looked over the whole wave info buffer */
+  if (!is_breakpoint_found)
+    {
+      /* We couldn't find a valid breakpoint, lets try and resolve it using debug facilities */
+      HwDbgInfo_debug dbg = hsail_init_hwdbginfo(NULL);
+      if (dbg != NULL)
+        {
+          for (i=0; i< num_waves; i++)
+            {
+              HwDbgInfo_addr wave_pc = (HwDbgInfo_addr) (active_waves[i].pc);
+              HwDbgInfo_linenum line_num = 0;
+              HwDbgInfo_addr elf_va_pc = 0;
+              char* src_file_name = NULL;
+
+              gdb_assert(hsail_segment_resolve_memva(wave_pc, (uint64_t*)(&elf_va_pc) ) == true);
+
+              if (hsail_dbginfo_get_pc_info(elf_va_pc, &line_num, &src_file_name))
+                {
+                  /* We really should get valid data if the hsail_dbginfo returns true */
+                  if (line_num != 0 && src_file_name != NULL)
+                    {
+                      char* src_line = NULL;
+                      src_line = hsail_dbginfo_get_srcline_from_buffer(dbg, line_num);
+                      printf_filtered("[ROCm-gdb]: PC:0x%04lx \t %s %s@line %lld\n",
+                                      (HsailProgramCounter)wave_pc,
+                                      src_line,
+                                      basename(src_file_name),
+                                      line_num);
+                      xfree(src_line);
+                      break;
+                    }
+                  else
+                    {
+                      printf_filtered("[ROCm-gdb]: PC:0x%04lx \n",
+                                      (HsailProgramCounter)elf_va_pc);
+                    }
+                }/* query dbginfo */
+              xfree(src_file_name);
+            }/* for (i = 0 -> num_waves */
+
+        } /* if (dbg !=  NULL*/
+    }   /* if (!is_breakpoint_found) */
 
   hsail_tdep_unmap_shm_buffer((void*)active_waves );
 }

@@ -114,7 +114,7 @@ static bool hsail_dbginfo_save_source_to_file(void)
       printf_filtered("%s could not be made read only\n",src_file_name);;
     }
 
-  printf_filtered("GPU kernel saved to %s\n",src_file_name);
+  rocm_printf_filtered("GPU kernel saved to %s\n",src_file_name);
   ret_code = true;
   return ret_code;
 
@@ -124,7 +124,6 @@ static bool hsail_dbginfo_init_source_buffer(HwDbgInfo_debug dbg_op)
 {
   struct ui_out *uiout = NULL;
   bool ret_code = false;
-
   /* Get the kernel source */
   const char* temp_hsail_src = NULL;
 
@@ -152,7 +151,6 @@ static bool hsail_dbginfo_init_source_buffer(HwDbgInfo_debug dbg_op)
       memcpy(gs_hsail_source, temp_hsail_src, hsail_source_len*sizeof(char));
 
       ret_code = hsail_dbginfo_save_source_to_file();
-      /*printf("====Static HSAIL Source len %d\n===\n %s\n",hsail_source_len, gs_hsail_source);*/
 
     }
   else
@@ -625,6 +623,8 @@ HwDbgInfo_debug hsail_init_hwdbginfo(HsailNotificationPayload* payload)
 
       /* Test function to print all the mapped addresses and line numbers */
       /* hsail_dbginfo_test_all_mapped_addrs(dbg_op); */
+
+      gdb_assert(errOut == HWDBGINFO_E_SUCCESS);
 
       /* We can clear the dbe_binary buffer once we have initialized HWDbgFacilities */
       if (dbe_binary != NULL)

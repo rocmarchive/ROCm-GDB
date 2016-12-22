@@ -79,6 +79,7 @@ static bool hsail_thread_validate_thread_active(const unsigned int* workGroup, c
           workGroup[1] == wave_info_buffer[nWave].workGroupId.y &&
           workGroup[2] == wave_info_buffer[nWave].workGroupId.z)
         {
+          int wi_index = 0;
           /* check all exec flags for the work item */
           current_bit = 1;
           for (wi_index = 0 ; wi_index < 64 ; wi_index++)
@@ -133,14 +134,14 @@ void hsail_thread_clear_focus(void)
   hsail_utils_copy_wavedim3(&gs_active_work_item, &gs_unknown_wave_dim);
 }
 
-void hsail_thread_set_focus(HsailWaveDim3 focusWg, HsailWaveDim3 focusWi)
+void hsail_thread_set_focus(const HsailWaveDim3 focusWg, const HsailWaveDim3 focusWi)
 {
   /* To work with the available validate function, we need to
    * move the input parameters into an array. We don't want to
    * do C-casting which may cause silent failure (such as
    * HsailWaveDim3 internal data type change to long int).*/
-  unsigned int wg_buff[3] = {0, 0, 0};
-  unsigned int wi_buff[3] = {0, 0, 0};
+  unsigned int wg_buff[3] = {-1, -1, -1};
+  unsigned int wi_buff[3] = {-1, -1, -1};
 
   struct ui_out *uiout = current_uiout;
 
@@ -188,8 +189,8 @@ void hsail_thread_set_focus_command(char *arg, int from_tty)
 {
   /* arg refers to the text after "rocm thread" */
   struct ui_out *uiout = current_uiout;
-  unsigned int workGroup[3] = {0,0,0};
-  unsigned int workItem[3] = {0,0,0};
+  unsigned int workGroup[3] = {-1,-1,-1};
+  unsigned int workItem[3] = {-1,-1,-1};
   int l = 0;
   int dummynumItems = 0;
   bool foundParam = true;
@@ -245,7 +246,9 @@ void hsail_thread_set_focus_command(char *arg, int from_tty)
       hsail_utils_copy_wavedim3(&wg_input, &gs_unknown_wave_dim);
       hsail_utils_copy_wavedim3(&wi_input, &gs_unknown_wave_dim);
 
-      sprintf(funcExp, "SetHsailThreadCmdInfo(%d,%d,%d,%d,%d,%d)",workGroup[0],workGroup[1],workGroup[2],workItem[0],workItem[1],workItem[2]);
+      sprintf(funcExp,
+              "SetHsailThreadCmdInfo(%d,%d,%d,%d,%d,%d)",
+              workGroup[0],workGroup[1],workGroup[2],workItem[0],workItem[1],workItem[2]);
 
       /* Create the expression */
       expr = parse_expression (funcExp);
@@ -259,11 +262,15 @@ void hsail_thread_set_focus_command(char *arg, int from_tty)
       wi_input.x = workItem[0];
       wi_input.y = workItem[1];
       wi_input.z = workItem[2];
+      hsail_thread_set_focus(wg_input, wi_input);
 
-      hsail_thread_set_focus(wg_input, wg_input);
-      /* We dont need to print the focus change message here
-       * since the handle_hsail_event that is the acknowledgment
-       * of the change in focus will print the change when it actually finishes
+      /* We force the focus to be "set"  as shown above even though
+       * it is not necessary. This atleast gaurantees that the output
+       * message for the user is printed instantly.
+       *
+       * We do it since the acknowledgment of the change which is done in the
+       * handle_hsail_event() may come at a later time once the expression is
+       * evaluated.
        * */
     }
     else

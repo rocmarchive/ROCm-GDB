@@ -10,13 +10,13 @@ The ROCm-GDB repository includes
 1. Clone the ROCm-GDB repository
   * `git clone https://github.com/RadeonOpenCompute/ROCm-GDB.git`
 2. The gdb build has been modified with new files and configure settings to enable GPU debugging. The scripts below should be run to compile gdb.
-The *run_configure_rocm.sh* script calls the GNU autotools configure with additional parameters.
+The *run_configure_rocm.sh* script calls the GNU autotools configure with additional parameters. The *run_configure_rocm.sh* script will create the build directory to build the gdb executable in a out of source manner
   * `./run_configure_rocm.sh debug`
 3. The `run_configure_rocm.sh` script also generates the *run_make_rocm.sh* which sets environment variables for the *Make* step
   * `./run_make_rocm.sh`
 
 # Running ROCm-GDB
-The `run_make_rocm.sh` script builds the gdb executable.
+The `run_make_rocm.sh` script builds the gdb executable which will be located in build/gdb/
 
 To run the ROCm debugger, you'd also need to get the [ROCm GPU Debug SDK](https://github.com/RadeonOpenCompute/ROCm-GPUDebugSDK).
 

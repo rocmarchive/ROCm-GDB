@@ -29,7 +29,7 @@
 
 void hsail_thread_clear_focus(void);
 
-void hsail_thread_set_focus(HsailWaveDim3 focusWg, HsailWaveDim3 focusWi);
+void hsail_thread_set_focus(const HsailWaveDim3 focusWg, const HsailWaveDim3 focusWi);
 
 void hsail_thread_set_focus_command(char *arg, int from_tty);
 
