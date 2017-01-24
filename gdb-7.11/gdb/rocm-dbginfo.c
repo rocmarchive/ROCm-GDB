@@ -624,8 +624,6 @@ HwDbgInfo_debug hsail_init_hwdbginfo(HsailNotificationPayload* payload)
       /* Test function to print all the mapped addresses and line numbers */
       /* hsail_dbginfo_test_all_mapped_addrs(dbg_op); */
 
-      gdb_assert(errOut == HWDBGINFO_E_SUCCESS);
-
       /* We can clear the dbe_binary buffer once we have initialized HWDbgFacilities */
       if (dbe_binary != NULL)
         {
