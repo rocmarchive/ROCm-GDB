@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "defs.h"
 
 #include "CommunicationControl.h"
+#include "FacilitiesInterface.h"
 
 typedef enum _HsailFilePermission
 {
@@ -73,6 +74,8 @@ char* hsail_utils_get_timestamp(void);
 
 /* Return the home directory for the user */
 char* hsail_utils_get_home_directory(void);
+
+char* hsail_utils_read_line_from_file(const char* file_name, HwDbgInfo_linenum line_num);
 
 /* Read file into a array, allocates the array and returns the size. The caller has to free it. */
 bool hsail_utils_read_file_to_array(const char* file_name, char** op_buffer, size_t* op_len);

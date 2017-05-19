@@ -56,6 +56,7 @@ HSAIL_PRINT_HELP_ARGS()
 "the Shader Array (SH), the Compute Unit (CU), the SIMD and the Wavefront slot within each SIMD (Wave) for "\
 "each executing wave\n"\
 "\n"\
+"info rocm devices \t\t   Print all available GPU devices\n"\
 "info rocm kernels \t\t   Print all GPU kernel dispatches\n"\
 "info rocm kernel <kernel_name> \t   Print all GPU kernel dispatches with a specific <kernel_name>\n"\
 "info rocm [work-groups|wgs] \t   Print all GPU work-group items\n"\

@@ -308,6 +308,119 @@ bool hsail_utils_read_file_to_array(const char* file_name, char** op_buffer, siz
   return ret_code;
 }
 
+char* hsail_utils_read_line_from_file(const char* file_name, HwDbgInfo_linenum line_num)
+{
+  FILE* file_handle = NULL;
+  char* raw_line = NULL;
+  char* get_line_array = NULL;
+  char* return_ptr = NULL;
+  HwDbgInfo_linenum count = 1;
+
+  if (file_name == NULL)
+    {
+      return NULL;
+    }
+
+  file_handle = fopen(file_name,"rt");
+  gdb_assert(file_handle != NULL);
+
+  raw_line = xmalloc(sizeof(char)*AGENT_MAX_SOURCE_LINE_LEN);
+  gdb_assert(NULL != raw_line);
+  memset(raw_line, '\0', AGENT_MAX_SOURCE_LINE_LEN);
+
+  while (!feof(file_handle))
+    {
+      size_t len =0;
+
+      /* We copy the get_line_array into the raw_line array since we
+       * want to keep the line limited to AGENT_MAX_SOURCE_LINE_LEN
+       * */
+      if (getline(&get_line_array, &len, file_handle) == -1)
+        {
+          break;
+        }
+      if (count == line_num)
+        {
+          /* AGENT_MAX_SOURCE_LINE_LEN-1 since we don't want smash the \0 */
+          strncpy(raw_line, get_line_array, AGENT_MAX_SOURCE_LINE_LEN-1);
+          break;
+        }
+      count++;
+    }
+
+  /* note: getline reallocates the array if not null, so we only need to free it at the end*/
+  if (get_line_array != NULL)
+    {
+      free_current_contents(&get_line_array);
+    }
+
+  /* Build the output only if the line number matched, otherwise return NULL*/
+  if (count == line_num)
+    {
+      int raw_index = 0;
+      int i = 0;
+      char* op_line = NULL;
+
+      op_line = xmalloc(sizeof(char)*AGENT_MAX_SOURCE_LINE_LEN);
+      gdb_assert(NULL != op_line);
+      memset(op_line, '\0', AGENT_MAX_SOURCE_LINE_LEN);
+
+      /* We need to remove the last newline character and the leading space */
+      while(raw_line[raw_index] != '\0')
+        {
+          if(isspace(raw_line[raw_index]))
+            {
+              raw_index++;
+            }
+          else
+            {
+              break;
+            }
+        }
+
+      /*Move string to beginning since we want to use same pointer to delete*/
+      for(i=0; raw_line[i] != '\0';i++)
+        {
+          /* We dont want to copy a new line character over,
+           * but we do want a semi-colon if present so we don't check for semi-colon
+           * before the copy */
+          if (raw_line[raw_index+i] == '\n')
+            {
+              break;
+            }
+          op_line[i]=raw_line[raw_index+i];
+
+          /*If we see a semicolon, end it*/
+          if (op_line[i] == ';')
+            {
+              break;
+            }
+        }
+
+      op_line[i+1]='\0';
+
+      /* It is possible that the op_line string is now empty if the input line
+       * number had only space or line feeds.
+       * However we should still send some valid characters to the agent since
+       * the breakpoint could resolve to a nearby PC just fine.
+       * In the future this could be improved to send a neighboring line or something.
+       * For now just add a space to the line.
+       * */
+      if (strlen(op_line) == 0)
+        {
+          op_line[0]=' ';
+          op_line[1]='\0';
+        }
+
+      return_ptr = op_line;
+    }
+
+
+  fclose(file_handle);
+  free_current_contents(&raw_line);
+  return return_ptr;
+}
+
 void hsail_utils_save_binary_buffer_to_file(size_t binary_size, void* binary_buffer)
 {
   static int call_count = 0;

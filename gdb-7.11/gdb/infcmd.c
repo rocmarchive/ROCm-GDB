@@ -987,10 +987,12 @@ step_command_fsm_prepare (struct step_command_fsm *sm,
 
 static int prepare_one_step (struct step_command_fsm *sm);
 
-/* A function to set the thread id for the HSAIL dispatch*/
+/* Save the thread id of the dispatch helper thread */
 static long gs_hsail_dispatch_thread_id = 0;
-void
-hsail_infcmd_set_dispatch_thread_pid(int dispatch_thread_id)
+
+/* Interface to rocm-tdep 
+   A function to set the thread id for the HSAIL dispatch */
+void hsail_infcmd_set_dispatch_thread_pid(int dispatch_thread_id)
 {
   gs_hsail_dispatch_thread_id = (long)dispatch_thread_id;
 }

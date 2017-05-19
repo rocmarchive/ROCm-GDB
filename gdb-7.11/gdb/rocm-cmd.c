@@ -38,6 +38,7 @@
 
 /* rocm-gdb headers */
 #include "rocm-cmd.h"
+#include "rocm-device.h"
 #include "rocm-fifo-control.h"
 #include "rocm-help.h"
 #include "rocm-kernel.h"
@@ -206,7 +207,8 @@ static bool hsail_info_parameter_check(char* arg)
 
   if (token != NULL)
     {
-      if (strcmp(token, "kernel") != 0 && strcmp(token, "kernels") != 0 &&
+      if (strcmp(token, "devices") != 0 &&
+          strcmp(token, "kernel") != 0 && strcmp(token, "kernels") != 0 &&
           strcmp(token, "wgs") != 0 && strcmp(token, "wg") != 0 &&
           strcmp(token, "work-group") != 0 && strcmp(token, "work-groups") != 0 &&
           strcmp(token, "wis") != 0  && strcmp(token, "wi") != 0 &&
@@ -256,6 +258,10 @@ static void hsail_info_command(char *arg, int from_tty)
     * hsail_print_wave_info (current_uiout, -1);
     * */
     hsail_info_param_print_help();
+  }
+  else if (strncmp(arg, "devices", 7) == 0)
+  {
+    rocm_print_devices_info(current_uiout);
   }
   else if (strncmp(arg,"kernels", 7) == 0)
   {
@@ -556,6 +562,11 @@ static void hsail_cmd_set_focus_command(char *arg, int from_tty)
   hsail_thread_set_focus_command(arg, from_tty);
 }
 
+static void hsail_cmd_switch_rocm_context(char *arg, int from_tty)
+{
+  hsail_thread_switch_rocm_context(arg, from_tty);
+}
+
 
 void
 _initialize_hsailcmd (void)
@@ -583,6 +594,9 @@ _initialize_hsailcmd (void)
 
   /* hsail thread  */
   add_hsail_cmd("thread", hsail_cmd_set_focus_command, _("ROCm switching work-item command.\n"HSAIL_THREAD_HELP()));
+
+  add_hsail_cmd("context", hsail_cmd_switch_rocm_context,
+                _("ROCm switching focus to host command.\n"));
 
 
 #if 0

@@ -422,6 +422,9 @@ extern int in_thread_list (ptid_t ptid);
    global id, not the system's).  */
 extern int valid_global_thread_id (int global_id);
 
+/* Search function to look u-p a thread based on any character string */
+struct thread_info* thread_find(char *arg, int from_tty);
+
 /* Search function to lookup a thread by 'pid'.  */
 extern struct thread_info *find_thread_ptid (ptid_t ptid);
 
@@ -635,9 +638,9 @@ extern void validate_registers_access (void);
    true iff we ever detected multiple threads.  */
 extern int show_thread_that_caused_stop (void);
 
-/* rocm-gdb function
+/* [ROCm-function] rocm-gdb function
  * Get the ID of the present focus thread */
-ptid_t thread_get_focus_inferior_ptid();
+ptid_t thread_get_focus_inferior_ptid(void);
 
 extern struct thread_info *thread_list;
 

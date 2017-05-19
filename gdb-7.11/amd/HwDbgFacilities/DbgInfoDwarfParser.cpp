@@ -33,8 +33,9 @@
 // #include <hsa_dwarf.h> // include this header when it is added to the HSA promoted libraries
 
 /// Local:
-#include <DbgInfoDwarfParser.h>
-#include <DbgInfoUtils.h>
+#include "DbgInfoLogging.h"
+#include "DbgInfoDwarfParser.h"
+#include "DbgInfoUtils.h"
 
 //@{
 /// \def [US] 18/11/10: the BSD implementation of DWARF is missing some values in the header file:
@@ -61,13 +62,16 @@
 #define DW_AT_HSA_brig_offset       0x3004 /* Used for ISA DWARF only */
 
 #define DW_LANG_HSA_Assembly      0x9000
+
 /* values for DWARF DW_AT_address_class */
+/* The corresponding address space values in the Compiler AMD GPU Code Gen are defined in lib/Target/AMDGPU/AMDGPU.h (AMDGPUAS::AddressSpaces enum)*/
 enum Amd_HSA_address_class
 {
     Amd_HSA_Private = 0,
     Amd_HSA_Global = 1,
     Amd_HSA_Readonly = 2,
-    Amd_HSA_Group = 3
+    Amd_HSA_Group = 3,
+    Amd_HSA_Flat = 4
 };
 //@}
 
@@ -254,15 +258,19 @@ bool DbgInfoDwarfParser::FillLineMappingFromDwarf(Dwarf_Die cuDIE,
 #define replaceWith '/'
 #endif
 
-                        while (std::string::npos != (pos = sourceFilePathAsString.find(replaceChar)))
+                        while ( std::string::npos !=
+                                (pos = sourceFilePathAsString.find(replaceChar))
+                               )
                         {
                             sourceFilePathAsString[pos++] = replaceWith;
                         }
 
-                        FileLocation fileLocation(sourceFilePathAsString, static_cast<HwDbgUInt64>(lineNum));
+                        FileLocation fileLocation(sourceFilePathAsString,
+                                                  static_cast<HwDbgUInt64>(lineNum));
                         // Success if we have successfully added the mapping or if the address is 0:
-                        bool addSucceeded = o_lineNumberMapping.AddLineMapping(fileLocation, static_cast<DwarfAddrType>(lineAddress))
-                                            || (0 == lineAddress);
+                        bool retCode = o_lineNumberMapping.AddLineMapping(fileLocation,
+                                                           static_cast<DwarfAddrType>(lineAddress));
+                        bool addSucceeded = retCode || (0 == lineAddress);
                         HWDBG_ASSERT(addSucceeded);
                     }
                 }
@@ -1539,6 +1547,10 @@ void DbgInfoDwarfParser::FillTypeNameAndDetailsFromTypeDIE(Dwarf_Die typeDIE,
                             o_variable.m_varIndirectionDetail = HWDBGINFO_VINDD_AMD_GPU_LDS_POINTER;
                             break;
 
+                        case Amd_HSA_Flat:
+                            o_variable.m_varIndirectionDetail = HWDBGINFO_VINDD_AMD_GPU_FLAT_POINTER;
+                            break;
+
                         /*
                         case Amd_HSA_Region:
                             o_variable.m_varIndirectionDetail = HWDBGINFO_VINDD_AMD_GPU_GDS_POINTER;
@@ -1546,6 +1558,8 @@ void DbgInfoDwarfParser::FillTypeNameAndDetailsFromTypeDIE(Dwarf_Die typeDIE,
                         */
 
                         default:
+                            DBGINFO_LOG("Unknown address class: " << addressClassAsDWUnsigned << "\t"
+                                        "variable m_varName: " << o_variable.m_varName);
                             // Unexpected Value!
                             HWDBG_ASSERT(false);
                             foundIndirectionDetail = false;
@@ -2014,15 +2028,27 @@ bool DbgInfoDwarfParser::InitializeWithBinary(const KernelBinary& kernelBinary,
                 Dwarf_Die cuDIE = nullptr;
                 rc = dwarf_siblingof(pDwarf, nullptr, &cuDIE, &err);
 
+                // This is the location of the CU DIE.
+                // We need to get the directory name from here to possibly deal with HSADBG-855
+
                 if (rc == DW_DLV_OK)
                 {
-                    FillCodeScopeFromDwarf(cuDIE, firstSourceFileRealPath, pDwarf, nullptr, DwarfCodeScope::DID_SCT_COMPILATION_UNIT,
+                    // Start recursion to fill code scope
+                    FillCodeScopeFromDwarf(cuDIE,
+                                           firstSourceFileRealPath,
+                                           pDwarf,
+                                           nullptr,
+                                           DwarfCodeScope::DID_SCT_COMPILATION_UNIT,
                                            o_scope);
 
-                    // Use the CU DIE to get the line number information. This needs to happen after the programs are
-                    // initialized, since each entry must be associated with a program:
+                    // Use the CU DIE to get the line number information.
+                    // This needs to happen after the programs are initialized, since each
+                    // entry must be associated with a program:
                     DwarfLineMapping lineNumberMapping;
-                    bool rcLn = FillLineMappingFromDwarf(cuDIE, firstSourceFileRealPath, pDwarf, o_lineNumberMapping);
+                    bool rcLn = FillLineMappingFromDwarf(cuDIE,
+                                                        firstSourceFileRealPath,
+                                                        pDwarf,
+                                                        o_lineNumberMapping);
                     HWDBG_ASSERT(rcLn);
 
                     // Fill addresses from mapping:
@@ -2187,10 +2213,20 @@ void DbgInfoDwarfParser::FillVariableWithInformationFromDIE(Dwarf_Die variableDI
                         {
                             if (rCurrentLocationOperation.lr_atom == DW_OP_xderef)
                             {
-                                variableCurrentLocation.m_locationOffset = (unsigned int)(currentLocStack.top().lr_number);
-                                currentLocStack.pop();
-                                variableCurrentLocation.m_isaMemoryRegion = (unsigned int)(currentLocStack.top().lr_number);
-                                currentLocStack.pop();
+                                // For xderef, we should be able to pop twice
+                                if (currentLocStack.size() >= 2)
+                                {
+                                    variableCurrentLocation.m_locationOffset = (unsigned int)(currentLocStack.top().lr_number);
+                                    currentLocStack.pop();
+                                    variableCurrentLocation.m_isaMemoryRegion = (unsigned int)(currentLocStack.top().lr_number);
+                                    currentLocStack.pop();
+                                }
+                                else
+                                {
+                                    DBGINFO_LOG("Error with processing DW_OP_xderef");
+                                    DBGINFO_LOG("No of Location Operations: "
+                                                << numberOfLocationsOperations );
+                                }
                             }
 
                             UpdateLocationWithDWARFData(rCurrentLocationOperation, variableCurrentLocation, isMember);

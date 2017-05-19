@@ -35,6 +35,9 @@ typedef enum _AgentBinaryNotification
 
 } AgentBinaryNotification;
 
+char* hsail_dbginfo_get_srcline_from_code_loc(const HwDbgInfo_debug dbg,
+                                              const HwDbgInfo_code_location code_loc);
+
 char* hsail_dbginfo_get_srcline_from_buffer(const HwDbgInfo_debug dbg,
                                             const HwDbgInfo_linenum line_num);
 
@@ -46,6 +49,8 @@ bool hsail_dbginfo_get_pc_info(HwDbgInfo_addr pc,
 char* hsail_dbginfo_get_source_buffer(void);
 
 const char* hsail_dbginfo_get_active_file_name(void);
+
+bool hsail_dbginfo_search_linemapping(const char* ip_hsail_bp_str);
 
 void hsail_dbginfo_set_facilities_status(const AgentBinaryNotification);
 

@@ -51,11 +51,23 @@ GenerateMakeScript()
 	echo "# Call HwDbgFacilities make" >> run_make_rocm.sh
 	echo "cd ../amd/HwDbgFacilities/" >> run_make_rocm.sh
 	echo "make$hwdbgfct_opt" >> run_make_rocm.sh
+	echo "MAKE_RESULT=\$?" >> run_make_rocm.sh
+	echo "if [ "\$MAKE_RESULT" != "0" ];" >> run_make_rocm.sh
+	echo "then" >> run_make_rocm.sh
+	echo "    echo \"Build of libAMDHwDbgFacilities-x64.so failed\"" >> run_make_rocm.sh
+	echo "    exit \$MAKE_RESULT" >> run_make_rocm.sh
+	echo "fi" >> run_make_rocm.sh
 	echo "cd -" >> run_make_rocm.sh
 	echo "# Set the name of the facilities library we will use" >> run_make_rocm.sh
 	echo "export AMD_DEBUG_FACILITIES='$1'" >> run_make_rocm.sh
 	echo "# Call GDB's make" >> run_make_rocm.sh
 	echo "make" >> run_make_rocm.sh
+	echo "MAKE_RESULT=\$?" >> run_make_rocm.sh
+	echo "if [ \"\$MAKE_RESULT\" != \"0\" ];" >> run_make_rocm.sh
+	echo "then" >> run_make_rocm.sh
+	echo "    echo \"Build of rocm-gdb failed\"" >> run_make_rocm.sh
+	echo "    exit \$MAKE_RESULT" >> run_make_rocm.sh
+	echo "fi" >> run_make_rocm.sh
 	echo "# Rename the GDB executable so the ROCm-gdb script can run it" >> run_make_rocm.sh
 	echo "mv gdb/gdb gdb/amd-gdb" >> run_make_rocm.sh
 	echo "# Copy wrapper scripts to build directory from source directory" >> run_make_rocm.sh

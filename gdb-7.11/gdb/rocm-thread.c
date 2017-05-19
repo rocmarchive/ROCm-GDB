@@ -29,6 +29,7 @@
 
 /* GDB headers */
 #include "defs.h"
+#include "gdbthread.h"
 #include "gdbtypes.h"
 #include "cli/cli-cmds.h"
 #include "command.h"
@@ -51,13 +52,17 @@ static const HsailWaveDim3 gs_unknown_wave_dim = {-1,-1,-1};
 static HsailWaveDim3 gs_active_work_group = {-1,-1,-1};
 static HsailWaveDim3 gs_active_work_item = {-1,-1,-1};
 
+/* The ID of the thread that the present dispatch was started from.
+   This is usually the main thread in a single threaded app that does dispatches
+ */
+static long gs_active_host_dispatch_thread_id = 0;
+
 static bool hsail_thread_validate_thread_active(const unsigned int* workGroup, const unsigned int* workItem)
 {
   /* get the waves info */
   int num_waves = hsail_tdep_get_active_wave_count();
   HsailAgentWaveInfo* wave_info_buffer = (HsailAgentWaveInfo*)hsail_tdep_map_wave_buffer();
   int nWave = 0;
-  int wi_index = 0;
   /* a single bit rotated left each time to compare whether each workitem in  a wave is active */
   uint64_t current_bit = 0;
   bool found = false;
@@ -289,5 +294,48 @@ void hsail_thread_get_current_focus(HsailWaveDim3* focus_wg, HsailWaveDim3* focu
   if (focus_wi != NULL)
     {
       hsail_utils_copy_wavedim3(focus_wi, &gs_active_work_item);
+    }
+}
+
+void hsail_thread_set_dispatch_host_thread_pid(int dispatch_host_thread_id)
+{
+  gs_active_host_dispatch_thread_id = (long)dispatch_host_thread_id;
+}
+
+void hsail_thread_switch_rocm_context(char *arg, int from_tty)
+{
+  /* We can do this only if we know what host thread the
+   * dispatch is starting from*/
+  if (gs_active_host_dispatch_thread_id != 0)
+    {
+      size_t len = 1024;
+      struct thread_info* host_thread_handle = NULL;
+
+      char* dispatch_thread_pid_str = (char*)xmalloc(len*sizeof(char));
+      gdb_assert(dispatch_thread_pid_str != NULL);
+      memset(dispatch_thread_pid_str, '\0', len);
+
+      sprintf(dispatch_thread_pid_str, "%ld",gs_active_host_dispatch_thread_id);
+
+      host_thread_handle =  thread_find(dispatch_thread_pid_str, from_tty);
+
+      if(host_thread_handle != NULL)
+        {
+          char* dispatch_thread_inf_num_str = (char*)xmalloc(len*sizeof(char));
+          gdb_assert(dispatch_thread_inf_num_str != NULL);
+
+          /* We use the inf->num to get the id of the thread
+           * We Get the number for the thread as a string, and then switch focus.
+           *
+           * This is similar to doing "thread 1" */
+          memset(dispatch_thread_inf_num_str, '\0', len);
+          sprintf(dispatch_thread_inf_num_str, "%d",  host_thread_handle->inf->num);
+
+          thread_command(dispatch_thread_inf_num_str, from_tty);
+
+          xfree(dispatch_thread_inf_num_str);
+        }
+
+      xfree(dispatch_thread_pid_str);
     }
 }

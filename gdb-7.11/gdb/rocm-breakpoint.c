@@ -40,13 +40,6 @@
 #include <stdlib.h>
 #include <ctype.h>
 
-/* Headers for shared mem */
-#include <sys/ipc.h>
-#include <sys/shm.h>
-
-/* This header is needed for FacilitiesInterface */
-#include <stdbool.h>
-
 /* ROCm-GDB headers*/
 #include "rocm-breakpoint.h"
 #include "rocm-cmd.h"
@@ -895,7 +888,14 @@ static int hsail_breakpoint_from_line_resolve(const HsailBreakpointRequest* hsai
 
   gdb_assert(hsail_facilities != NULL);
 
-  loc = hwdbginfo_make_code_location(NULL, line_num);
+  if (strcmp("temp_source",  target_file_name) == 0)
+    {
+      loc = hwdbginfo_make_code_location(NULL, line_num);
+    }
+  else
+    {
+      loc = hwdbginfo_make_code_location(target_file_name, line_num);
+    }
   if (NULL == loc)
     {
       printf_filtered("Could not make a code location %s \t %llu\n", target_file_name, line_num);
@@ -904,6 +904,8 @@ static int hsail_breakpoint_from_line_resolve(const HsailBreakpointRequest* hsai
 
   /* Get the closest legal code location: */
   err = hwdbginfo_nearest_mapped_line(hsail_facilities, loc, &resolvedLoc);
+
+  /* Release old location which we dont need anymore */
   hwdbginfo_release_code_locations(&loc, 1);
 
   if (0 == resolvedLoc && HWDBGINFO_E_NOTFOUND == err)
@@ -952,6 +954,8 @@ static int hsail_breakpoint_from_line_resolve(const HsailBreakpointRequest* hsai
 
   /* Get the ISA addresses for this location: */
   err = hwdbginfo_line_to_addrs(hsail_facilities, resolvedLoc, addrCount, addrs, NULL);
+  
+  src_line = hsail_dbginfo_get_srcline_from_code_loc(hsail_facilities, resolvedLoc);
   hwdbginfo_release_code_locations(&resolvedLoc, 1);
   if (HWDBGINFO_E_SUCCESS != err)
     {
@@ -962,9 +966,10 @@ static int hsail_breakpoint_from_line_resolve(const HsailBreakpointRequest* hsai
   /* Set to 0 just in case resolving to mem addr fails*/
   gdb_bkpt_handle->hsail_pc = 0;
   gdb_bkpt_handle->hsail_pc_relative = addrs[0];
-  /* Mechanism to update the breakpoint's HSAIL request structure with source line */
-  src_line = hsail_dbginfo_get_srcline_from_buffer(hsail_facilities,
-                                                   line_num);
+  
+  gdb_assert(hsail_segment_resolve_elfva(gdb_bkpt_handle->hsail_pc_relative,
+                                         &(gdb_bkpt_handle->hsail_pc)) == true);
+
 
   gdb_assert(hsail_segment_resolve_elfva(gdb_bkpt_handle->hsail_pc_relative,
                                          &(gdb_bkpt_handle->hsail_pc)) == true);

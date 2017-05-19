@@ -59,6 +59,7 @@
 #include "rocm-breakpoint.h"
 #include "rocm-cmd.h"
 #include "rocm-dbginfo.h"
+#include "rocm-device.h"
 #include "rocm-fifo-control.h"
 #include "rocm-infcmd.h"
 #include "rocm-kernel.h"
@@ -821,6 +822,11 @@ void hsail_tdep_print_notification_type(const HsailNotification notification)
         printf("Notification Type: HSAIL_NOTIFY_KILL_COMPLETE \n");
         break;
       }
+    case HSAIL_NOTIFY_DEVICES:
+      {
+        printf("Notification Type: HSAIL_NOTIFY_DEVICES \n");
+        break;
+      }
     default:
       printf_filtered("Unsupported notification type");
   }
@@ -936,7 +942,9 @@ void handle_hsail_event(int err, gdb_client_data client_data)
               }
             else
               {
+
                 rocm_printf_filtered("HSAIL kernel source debugging will not occur\n");
+
                 hsail_dbginfo_set_facilities_status(HSAIL_AGENT_BINARY_UNKNOWN);
               }
 
@@ -954,6 +962,9 @@ void handle_hsail_event(int err, gdb_client_data client_data)
             gdb_assert(fifo_data.payload.PredispatchNotification.m_predispatchState
                        != HSAIL_PREDISPATCH_STATE_UNKNOWN);
             gs_hsail_predispatch_state = fifo_data.payload.PredispatchNotification.m_predispatchState;
+
+            hsail_thread_set_dispatch_host_thread_pid(
+                fifo_data.payload.PredispatchNotification.m_HostDispatchTid);
             break;
           }
         case HSAIL_NOTIFY_START_DEBUG_THREAD:
@@ -994,6 +1005,7 @@ void handle_hsail_event(int err, gdb_client_data client_data)
 
             hsail_tdep_set_active_wave_count(0);
             hsail_thread_clear_focus();
+            rocm_unset_active_device();
             break;
           }
         case HSAIL_NOTIFY_FOCUS_CHANGE:
@@ -1022,6 +1034,11 @@ void handle_hsail_event(int err, gdb_client_data client_data)
         case HSAIL_NOTIFY_NEW_ACTIVE_WAVES:
           {
             hsail_tdep_set_active_wave_count(fifo_data.payload.NewActiveWaveNotification.m_numActiveWaves);
+            break;
+          }
+        case HSAIL_NOTIFY_DEVICES:
+          {
+            rocm_set_devices(&fifo_data);
             break;
           }
         default:

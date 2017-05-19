@@ -1,7 +1,7 @@
 /*
-   ROCm GDB functions to handle the focus work-group and work-item.
+   ROCm GDB functions related to GPU devices.
 
-   Copyright (c) 2015-2016 ADVANCED MICRO DEVICES, INC.  All rights reserved.
+   Copyright (c) 2017 ADVANCED MICRO DEVICES, INC.  All rights reserved.
    This file includes code originally published under
 
    Copyright (C) 1986-2014 Free Software Foundation, Inc.
@@ -21,23 +21,19 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#if !defined (HSAIL_THREAD_H)
-#define HSAIL_THREAD_H 1
+#if !defined (ROCM_DEVICE_H)
+#define ROCM_DEVICE_H 1
 
-/* The header files shared with the agent*/
 #include "CommunicationControl.h"
 
-void hsail_thread_clear_focus(void);
+// Add devices info received from the Agent.
+bool  rocm_set_devices(const HsailNotificationPayload* fifo_data);
 
-void hsail_thread_set_focus(const HsailWaveDim3 focusWg, const HsailWaveDim3 focusWi);
+// Mark all devices as not active. This function is called
+// when the GPU debugging is done.
+void  rocm_unset_active_device(void);
 
-void hsail_thread_set_focus_command(char *arg, int from_tty);
+// Print the devices info.
+void  rocm_print_devices_info (struct ui_out* uiout);
 
-void hsail_thread_get_current_focus(HsailWaveDim3* focus_wg, HsailWaveDim3* focus_wi);
-
-void hsail_thread_set_dispatch_host_thread_pid(int dispatch_host_thread_id);
-
-/* Switch to the thread that spawned the active dispatch */
-void hsail_thread_switch_rocm_context(char *arg, int from_tty);
-
-#endif // HSAIL_THREAD_H
+#endif // ROCM_DEVICE_H

@@ -34,7 +34,7 @@ case $targ in
 esac
 
 # HSAIL Files
-gdb_target_rocm_obs="rocm-breakpoint.o rocm-cmd.o rocm-dbginfo.o rocm-fifo-control.o rocm-infcmd.o rocm-kernel.o rocm-print.o rocm-segment-loader.o rocm-tdep.o rocm-thread.o rocm-trace.o rocm-utils.o"
+gdb_target_rocm_obs="rocm-breakpoint.o rocm-cmd.o rocm-dbginfo.o rocm-fifo-control.o rocm-device.o rocm-infcmd.o rocm-kernel.o rocm-print.o rocm-segment-loader.o rocm-tdep.o rocm-thread.o rocm-trace.o rocm-utils.o"
 
 # map target info into gdb names.
 

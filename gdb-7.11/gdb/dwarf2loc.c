@@ -4242,6 +4242,8 @@ disassemble_dwarf_expression (struct ui_file *stream,
 	  ul = dwarf2_read_addr_index (per_cu, ul);
 	  fprintf_filtered (stream, " %s", pulongest (ul));
 	  break;
+	case DW_OP_xderef:
+	  fprintf_filtered (stream, " %s", "xderef disassembly may not be complete");
 	}
 
       fprintf_filtered (stream, "\n");

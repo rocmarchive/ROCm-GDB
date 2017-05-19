@@ -10142,6 +10142,18 @@ create_breakpoint (struct gdbarch *gdbarch,
   /* gdb-7.11 use event_location struct to store breakpoint string into u.addr_string
    * We can use get_line_spec_location() function to retrieve it (the "rocm:<line_num>" keyword)*/
   args = get_linespec_location(location);
+
+  /*
+  Uncomment this call to try out the unified breakpoint logic, where we search the line
+  mapping without the rocm keyword.
+
+  bool test_var = hsail_dbginfo_search_linemapping(args);
+  if (test_var == true)
+    {
+      printf("We can create a GPU Breakpoint\n");
+    }
+   */
+
   /* Check for hsail breakpoint and leave from here if so */
   if (is_hsail_breakpoint(args))
     {

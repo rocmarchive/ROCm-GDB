@@ -126,12 +126,12 @@ static bool hsail_dbginfo_init_source_buffer(HwDbgInfo_debug dbg_op)
   bool ret_code = false;
   /* Get the kernel source */
   const char* temp_hsail_src = NULL;
-
   uint64_t hsail_source_len = 0;
 
   HwDbgInfo_err errOut = hwdbginfo_get_hsail_text(dbg_op, &temp_hsail_src, &hsail_source_len);
   if (errOut == HWDBGINFO_E_SUCCESS)
     {
+
       gdb_assert(temp_hsail_src != NULL);
       gdb_assert(hsail_source_len != 0);
 
@@ -151,6 +151,14 @@ static bool hsail_dbginfo_init_source_buffer(HwDbgInfo_debug dbg_op)
       memcpy(gs_hsail_source, temp_hsail_src, hsail_source_len*sizeof(char));
 
       ret_code = hsail_dbginfo_save_source_to_file();
+      if (ret_code == true)
+        {
+          rocm_printf_filtered("Kernel saved to %s\n", active_kernel_src_file_path);
+        }
+      else
+        {
+          rocm_printf_filtered("Error saving kernel\n");
+        }
 
     }
   else
@@ -171,13 +179,17 @@ static bool hsail_dbginfo_init_source_buffer(HwDbgInfo_debug dbg_op)
         {
           size_t source_len = 0;
           gdb_assert(errOut == HWDBGINFO_E_SUCCESS);
+
           hsail_utils_copy_string(&active_kernel_src_file_path, file_name);
 
           ret_code = hsail_utils_read_file_to_array(active_kernel_src_file_path,
-                                         &gs_hsail_source,
-                                         &source_len);
+                                                    &gs_hsail_source,
+                                                    &source_len);
+          if (ret_code == false)
+            {
+              rocm_printf_filtered("Could not read %s\n", active_kernel_src_file_path);
+            }
 
-          rocm_printf_filtered("Kernel saved to %s\n", active_kernel_src_file_path);
           xfree(file_name);
         }
     }
@@ -362,6 +374,137 @@ char* hsail_dbginfo_get_source_buffer(void)
   return gs_hsail_source;
 }
 
+char* hsail_dbginfo_get_srcline_from_code_loc(const HwDbgInfo_debug dbg,
+                                              const HwDbgInfo_code_location code_loc)
+{
+  HwDbgInfo_linenum line_num = 0;
+  char* op_ptr = NULL;
+  size_t buffer_len = 1024;
+  size_t op_buffer_len = 1024;
+
+  HwDbgInfo_err err = HWDBGINFO_E_SUCCESS;
+  char* file_name = xmalloc(sizeof(char)*buffer_len);
+  gdb_assert(file_name != NULL);
+  memset(file_name, '\0', buffer_len);
+
+  err = hwdbginfo_code_location_details(code_loc, &line_num, buffer_len ,file_name, &op_buffer_len);
+  gdb_assert(err == HWDBGINFO_E_SUCCESS);
+
+  if ((file_name == NULL) || (dbg == NULL))
+    {
+      return op_ptr;
+    }
+
+  /* if we are doing hsail level debugging, we need to look into memory */
+  if( (strcmp(file_name, "temp_source") == 0) ||
+      (strstr(file_name,"hsa::self().elf") != NULL) )
+    {
+      op_ptr = hsail_dbginfo_get_srcline_from_buffer(dbg, line_num);
+    }
+  else
+    {
+      op_ptr = hsail_utils_read_line_from_file(file_name, line_num);
+    }
+
+  xfree(file_name);
+  return op_ptr;
+}
+
+
+bool hsail_dbginfo_search_linemapping(const char* ip_arg)
+{
+
+  bool ret_code = false;
+
+  char* temp = NULL;
+  char* ipStr = NULL;
+  char* ipfileName = NULL;
+  char* lineNoStr = NULL;
+  HwDbgInfo_debug dbg = hsail_init_hwdbginfo(NULL);
+  if (dbg == NULL)
+    {
+      return ret_code;
+    }
+
+  if (ip_arg == NULL)
+    {
+      return ret_code;
+    }
+
+  if (strlen(ip_arg) > 4)
+    {
+      if (ip_arg[0] == 'r' &&
+          ip_arg[1] == 'o' &&
+          ip_arg[2] == 'c' &&
+          ip_arg[3] == 'm')
+        {
+          return ret_code;
+        }
+    }
+
+  /* Copy input arg to a char array so strtok doesn't wreck input */
+  hsail_utils_copy_string(&ipStr, ip_arg);
+
+  temp = strtok(ipStr, ": ");
+
+  if (temp == NULL)
+    {
+      return ret_code;
+    }
+
+  // Copy strtok op to a separate buffer
+  hsail_utils_copy_string(&ipfileName, temp);
+
+  lineNoStr = strtok(NULL, ": ");
+  if (lineNoStr != NULL)
+    {
+      HwDbgInfo_linenum line_no = (HwDbgInfo_linenum) strtoull(lineNoStr, NULL, 10);
+
+      // Create a code location
+      HwDbgInfo_code_location loc = hwdbginfo_make_code_location(ipfileName, line_no);
+      HwDbgInfo_code_location resolvedLoc = NULL;
+
+      // Get the nearest code location
+      HwDbgInfo_err err = hwdbginfo_nearest_mapped_line(dbg, loc, &resolvedLoc);
+
+      if (err == HWDBGINFO_E_SUCCESS)
+        {
+          // Maybe compare the 2 ?
+          HwDbgInfo_linenum resolvedLineNum;
+          size_t resolvedfileNameLen = 1024;
+          size_t resolvedfileNameLenOut = 0;
+
+          char* fileName = (char*)malloc(resolvedfileNameLen*sizeof(char));
+          gdb_assert(fileName != NULL);
+          memset(fileName, '\0', resolvedfileNameLen);
+
+          err = hwdbginfo_code_location_details(resolvedLoc, &resolvedLineNum,
+                                                resolvedfileNameLen, fileName, &resolvedfileNameLenOut);
+          if  (abs(resolvedLineNum - line_no) < 2)
+            {
+              printf("Create a GPU Breakpoint ");
+              ret_code =true;
+            }
+          else
+            {
+              printf("Resolved %lld ", resolvedLineNum);
+              printf("Req is %lld \n", line_no);
+            }
+          xfree(fileName);
+        }
+      else
+        {
+          printf("Not a GPU breakpoint %d",err);
+        }
+    }
+
+  xfree(temp);
+  xfree(ipfileName);
+
+  return ret_code;
+}
+
+
 /* This function takes in the debuginfo handle so that it can
  * get the source buffer for gdb.
  */
@@ -369,19 +512,13 @@ char* hsail_dbginfo_get_srcline_from_buffer(const HwDbgInfo_debug dbg,
                                             const HwDbgInfo_linenum line_num)
 {
 
-  char* op_str = NULL;
-  HwDbgInfo_linenum count = 0;
   int temp_file_desc = -1;
   char temp_file_name[] = "/tmp/rocm_dbg_XXXXXX";
 
-  int status = 0;
   FILE* temp_file_handle = NULL;
-  int raw_index = 0;
-  char* raw_line = NULL;
-  char* get_line_array = NULL;
   char* op_line = NULL;
-  int i = 0;
-  size_t len =0;
+  int status = 0;
+
   gdb_assert(dbg != NULL);
 
   /* Get a temp file name, mkstemp will populate the XXXXXX in temp_file_name
@@ -393,98 +530,13 @@ char* hsail_dbginfo_get_srcline_from_buffer(const HwDbgInfo_debug dbg,
   gdb_assert(temp_file_handle != NULL);
 
   fprintf(temp_file_handle, "%s",gs_hsail_source);
-  rewind(temp_file_handle);
+
   fclose(temp_file_handle);
+  op_line = hsail_utils_read_line_from_file(temp_file_name, line_num);
 
-  temp_file_handle = fopen(temp_file_name,"rt");
-  gdb_assert(temp_file_handle != NULL);
-  count = 1;
-
-  raw_line = xmalloc(sizeof(char)*AGENT_MAX_SOURCE_LINE_LEN);
-  op_line = xmalloc(sizeof(char)*AGENT_MAX_SOURCE_LINE_LEN);
-
-  gdb_assert(NULL != raw_line);
-  gdb_assert(NULL != op_line);
-
-  memset(raw_line, '\0', AGENT_MAX_SOURCE_LINE_LEN);
-  memset(op_line, '\0', AGENT_MAX_SOURCE_LINE_LEN);
-
-  while (!feof(temp_file_handle))
-    {
-      /* We copy the get_line_array into the raw_line array since we
-       * want to keep the line limited to AGENT_MAX_SOURCE_LINE_LEN
-       * */
-      if (getline(&get_line_array, &len, temp_file_handle) == -1)
-        {
-          break;
-        }
-      if (count == line_num)
-        {
-          /* AGENT_MAX_SOURCE_LINE_LEN-1 since we don't want smash the \0 */
-          strncpy(raw_line, get_line_array, AGENT_MAX_SOURCE_LINE_LEN-1);
-          break;
-        }
-      count++;
-    }
-
-  /* note: getline reallocates the array if not null, so we only need to free it at the end*/
-  if (get_line_array != NULL)
-    {
-      free_current_contents(&get_line_array);
-    }
-
-  /* We need to remove the last newline character and the leading space */
-  raw_index=0;
-  i=0;
-  while(raw_line[raw_index] != '\0')
-    {
-      if(isspace(raw_line[raw_index]))
-        {
-          raw_index++;
-        }
-      else
-        {
-          break;
-        }
-    }
-
-  /*Move string to beginning since we want to use same pointer to delete*/
-  for(i=0; raw_line[i] != '\0';i++)
-    {
-      /* We dont want to copy a new line character over,
-       * but we do want a semi-colon if present so we don't check for semi-colon
-       * before the copy */
-      if (raw_line[raw_index+i] == '\n')
-        {
-          break;
-        }
-      op_line[i]=raw_line[raw_index+i];
-
-      /*If we see a semicolon, end it*/
-      if (op_line[i] == ';')
-        {
-          break;
-        }
-    }
-  op_line[i+1]='\0';
-
-  free_current_contents(&raw_line);
-
+  /* Delete tmp file */
   status = remove(temp_file_name);
   gdb_assert(status == 0);
-
-  /* It is possible that the op_line string is now empty if the input line
-   * number had only space or line feeds.
-   * However we should still send some valid characters to the agent since
-   * the breakpoint could resolve to a nearby PC just fine.
-   * In the future this could be improved to send a neighboring line or something.
-   * For now just add a space to the line.
-   * */
-  if (strlen(op_line) == 0)
-    {
-      op_line[0]=' ';
-      op_line[1]='\0';
-    }
 
   /*op_line will be free'd by the breakpoint request that for the source line */
   return op_line;
@@ -524,7 +576,7 @@ HwDbgInfo_debug hsail_init_hwdbginfo(HsailNotificationPayload* payload)
   dbg_op = NULL;
   if(hsail_is_debug_facilities_loaded())
     {
-      /* A copy of the shared memory segment */
+      /* A copy of the shared memory segment )*/
       void* dbe_binary = NULL;
       size_t dbe_binary_size = 0;
       int shmid = -1;
@@ -561,6 +613,7 @@ HwDbgInfo_debug hsail_init_hwdbginfo(HsailNotificationPayload* payload)
 
       memcpy(dbe_binary,(size_t*)pShm+1,dbe_binary_size);
 
+
       /* Uncomment this call if you need to save the binary to the file
       hsail_breakpoint_save_binary_to_file(dbe_binary_size, dbe_binary);
       */
@@ -582,34 +635,27 @@ HwDbgInfo_debug hsail_init_hwdbginfo(HsailNotificationPayload* payload)
       /* If we get a no HL binary, return code, we try to initialize as a single level binary */
       if (errout_twolevel == HWDBGINFO_E_NOHLBINARY)
         {
+          /*
           dbg_op = hwdbginfo_init_with_single_level_binary(dbe_binary,
                                                            dbe_binary_size,
                                                            &errout_onelevel);
+          */
+          dbg_op = NULL;
         }
 
-      /* We have an issue with the messaging here
-       *
-       * While debugging HSAIL if we have a code object where BRIG Dwarf is not
-       * present but ISA dwarf is present, debug facilities can successfully initialize a
-       * 1 level context. In this case there is an extra message saying that kernel
-       * debugging is not supported for LC.
-       *
+      /*
        * In the near future, debug facilities needs to be able to tell the difference
        * between an incomplete 2 level code object and a complete 1 level code object.
        * Since we dont support debugging LC for 1.3, this is not a big issue.
        *  */
 
-      /* If we have a single level binary, dont try to debug it */
+      /* If we have a single level binary, thats good, we dont need to check the
+       * two level return code */
       if (errout_twolevel == HWDBGINFO_E_NOHLBINARY && errout_onelevel == HWDBGINFO_E_SUCCESS)
         {
-          /* We need to shutdown debug facilities if it is initialized */
-          hwdbginfo_release_debug_info(&dbg_op);
-          dbg_op = NULL;
-
-          ui_out_text(uiout, "[ROCm-gdb]: Kernel debugging is not supported for applications compiled with HCC-LC\n");
           fflush(stdout);
         }
-      if (errout_twolevel != HWDBGINFO_E_SUCCESS )
+      else if (errout_twolevel != HWDBGINFO_E_SUCCESS )
         {
           /* HwDbgFacilities init: Called DebugFacilities Incorrectly.
            * We can add more detailed messages such as low-level dwarf or high level dwarf missing in the future
@@ -621,6 +667,7 @@ HwDbgInfo_debug hsail_init_hwdbginfo(HsailNotificationPayload* payload)
 
         }
 
+
       /* Test function to print all the mapped addresses and line numbers */
       /* hsail_dbginfo_test_all_mapped_addrs(dbg_op); */
 
@@ -629,6 +676,7 @@ HwDbgInfo_debug hsail_init_hwdbginfo(HsailNotificationPayload* payload)
         {
           free_current_contents(&dbe_binary);
         }
+
 
       /* Get the kernel source, only if the 2 level initialization was good*/
       if (errout_twolevel == HWDBGINFO_E_SUCCESS)

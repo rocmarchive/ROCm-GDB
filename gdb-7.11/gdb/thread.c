@@ -1152,9 +1152,12 @@ pc_in_thread_step_range (CORE_ADDR pc, struct thread_info *thread)
 	  && pc < thread->control.step_range_end);
 }
 
-/* rocm-gdb function
- * Get the ID of the present focus thread */
-ptid_t thread_get_focus_inferior_ptid()
+/* [ROCm-function] rocm-gdb function to get
+ * the ID of the present focus thread.
+ *
+ * Used to control message output if thread is regular host thread
+ * or debug helper thread  */
+ptid_t thread_get_focus_inferior_ptid(void)
 {
   return inferior_ptid;
 }
@@ -1981,14 +1984,14 @@ thread_name_command (char *arg, int from_tty)
   info->name = arg ? xstrdup (arg) : NULL;
 }
 
-/* Find thread ids with a name, target pid, or extra info matching ARG.  */
 
-static void
-thread_find_command (char *arg, int from_tty)
+/* Find thread ids with a name, target pid, or extra info matching ARG.  */
+struct thread_info* thread_find(char *arg, int from_tty)
 {
   struct thread_info *tp;
   const char *tmp;
   unsigned long match = 0;
+  struct thread_info* ret_val = NULL;
 
   if (arg == NULL || *arg == '\0')
     error (_("Command requires an argument."));
@@ -2004,6 +2007,7 @@ thread_find_command (char *arg, int from_tty)
 	{
 	  printf_filtered (_("Thread %s has name '%s'\n"),
 			   print_thread_id (tp), tp->name);
+          ret_val = tp;
 	  match++;
 	}
 
@@ -2012,7 +2016,9 @@ thread_find_command (char *arg, int from_tty)
 	{
 	  printf_filtered (_("Thread %s has target name '%s'\n"),
 			   print_thread_id (tp), tmp);
+	  ret_val = tp;
 	  match++;
+
 	}
 
       tmp = target_pid_to_str (tp->ptid);
@@ -2020,6 +2026,7 @@ thread_find_command (char *arg, int from_tty)
 	{
 	  printf_filtered (_("Thread %s has target id '%s'\n"),
 			   print_thread_id (tp), tmp);
+	  ret_val = tp;
 	  match++;
 	}
 
@@ -2028,11 +2035,28 @@ thread_find_command (char *arg, int from_tty)
 	{
 	  printf_filtered (_("Thread %s has extra info '%s'\n"),
 			   print_thread_id (tp), tmp);
+          ret_val = tp;
 	  match++;
 	}
     }
   if (!match)
     printf_filtered (_("No threads match '%s'\n"), arg);
+  return ret_val;
+}
+
+/* [ROCm-function] We change the original thread find command
+ * into a interface that returns the matching thread id as well
+ *
+ * A new static thread_find_command with the same signature
+ * is defined below, that discards the output.
+ *
+ * Needed in order to find the thread from which GPU dispatches
+ * have been dispatched and switch focus to the host.
+ * */
+static void
+thread_find_command (char *arg, int from_tty)
+{
+  thread_find(arg, from_tty);
 }
 
 /* Print notices when new threads are attached and detached.  */

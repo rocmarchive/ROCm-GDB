@@ -34,7 +34,7 @@ void hsail_set_step_breakpoints(int steptype, int count);
 
 void hsail_set_continue_dispatch(void);
 
-/* Called from the handle_hsail_event to set the dispatch thread's id */
+/* Called from the handle_hsail_event to set the dispatch helper thread's id */
 void hsail_infcmd_set_dispatch_thread_pid(int dispatch_thread_id);
 
 /* Defined in infcmd.c */
